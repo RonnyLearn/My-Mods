@@ -38,6 +38,10 @@ Keys are matched by physical position (`KeyboardEvent.code`), so the layout also
 
 Every push builds a Windows installer and a portable `.exe` in GitHub Actions. You can find them under the **NeonKeys** workflow → *Artifacts*. A tag named `neonkeys-v*` (for example `neonkeys-v0.1.0`) publishes them as a GitHub Release.
 
+## Web version
+
+The same app runs in Chrome or Edge, which have Web MIDI. To publish it on GitHub Pages, set Settings → Pages → Source to *GitHub Actions* and add the repository variable `NEONKEYS_PAGES=true`.
+
 ## Development
 
 ```bash
