@@ -1,0 +1,10 @@
+{
+  "name": "pianoflows-prototype",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Кликабельный прототип интерфейса PianoFlows (только визуал)",
+  "scripts": {
+    "build": "node src/build.js",
+    "open": "start dist/index.html"
+  }
+}

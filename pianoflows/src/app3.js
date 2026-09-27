@@ -1,4 +1,4 @@
-// NeonKeys prototype — UI behaviour + canvas light engine. Visual only: no audio, no saving, no network.
+// PianoFlows prototype — UI behaviour + canvas light engine. Visual only: no audio, no saving, no network.
 (() => {
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];

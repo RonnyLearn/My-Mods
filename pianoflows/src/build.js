@@ -1,4 +1,4 @@
-// NeonKeys prototype v3 — own layout: side dock, HUD capsule, centered sheets. Visual only.
+// PianoFlows prototype v3 — own layout: side dock, HUD capsule, centered sheets. Visual only.
 const fs = require('fs');
 const path = require('path');
 const ICONS = Object.assign(require('./icons.js'), {
@@ -106,7 +106,7 @@ const DOCK = [['library', 'F1', 'book', 'Библиотека'], ['train', 'F2',
 const TOOLS = [['circle', 'circle5', 'Квинтовый круг'], ['webcam', 'cam', 'Камера на сцене'], ['video', 'film', 'Видео поверх'], ['ai', 'ai', 'Аудио → MIDI'], ['monitor', 'pulse', 'MIDI-монитор'], ['pitch', 'sliders', 'Питч и вибрато'], ['browser', 'globe', 'Браузер'], ['ideas', 'bulb', 'Идеи сообщества'], ['bug', 'bug', 'Сообщить о проблеме']];
 
 const feed = {
-  world: [['Мира', '#ff8fb8', 'кто сыграет Лунную сонату в «Ночном зале»?'], ['serbez', '#7aa8ff', 'я, только разыграюсь'], ['小星星', '#ffd36e', '今天练了两个小时', 'tr'], ['noa', '#ffb35c', 'в библиотеке новая подборка: саундтреки игр', 'mod'], ['NeonKeys', '#b69bff', 'в 23:00 короткий перезапуск сервера', 'team'], ['Ронни', 'me', 'жду снег в новой теме']],
+  world: [['Мира', '#ff8fb8', 'кто сыграет Лунную сонату в «Ночном зале»?'], ['serbez', '#7aa8ff', 'я, только разыграюсь'], ['小星星', '#ffd36e', '今天练了两个小时', 'tr'], ['noa', '#ffb35c', 'в библиотеке новая подборка: саундтреки игр', 'mod'], ['PianoFlows', '#b69bff', 'в 23:00 короткий перезапуск сервера', 'team'], ['Ронни', 'me', 'жду снег в новой теме']],
   room: [['•', '#a39cae', 'Ты в «Ночном зале». Режим: по очереди.'], ['Мира', '#ff8fb8', 'следующая играю я, потом Ронни'], ['kaminari', '#ffb15a', 'поставьте зал «Собор», пожалуйста']],
   dm: [['Мира', '#ff8fb8', 'скинь ноты Interstellar'], ['Ронни', 'me', 'держи, в библиотеке по названию'], ['Мира', '#ff8fb8', 'спасибо!!']],
 };
@@ -117,7 +117,7 @@ const scene = `
 <div class="weather rain">${rain}</div><div class="weather snow">${snow}</div><div class="weather petals">${petals}</div><div class="weather flies">${fireflies}</div>
 
 <nav class="dock" aria-label="Разделы">
-  <button type="button" class="mark" data-open="about" aria-label="О NeonKeys"><span>NK</span></button>
+  <button type="button" class="mark" data-open="about" aria-label="О PianoFlows"><span>NK</span></button>
   <div class="dk">${DOCK.map(([k, key, ic, t]) => `<button type="button" class="di" data-open="${k}" data-tip="${t} · ${key}">${icon(ic)}<small>${t}</small></button>`).join('')}</div>
   <div class="dk sep"><button type="button" class="di" data-flyout="tools" data-tip="Инструменты · F7">${icon('grid')}<small>Ещё</small></button></div>
   <div class="dk end"><button type="button" class="di" data-open="profile" data-tip="Профиль · F8">${icon('user')}<small>Профиль</small></button><button type="button" class="di" data-open="settings" data-tip="Настройки · F9">${icon('gear')}<small>Настройки</small></button></div>
@@ -173,7 +173,7 @@ SET.general = [
   card('Клавиатура на экране', `<div class="kbsel" data-single>${[88, 76, 61, 49, 37, 25].map(n => `<button type="button" class="${n === 88 ? 'on' : ''}"><span class="kbar" style="--n:${n}"></span><b>${n}</b></button>`).join('')}</div>` + tog('Сдвигать под сыгранную ноту', false, '', 'Если на MIDI сыграна нота за краем — клавиатура подвинется сама') + field('Высота клавиш', 50, 150, 72, '%', { apply: 'ph' })),
   card('Производительность', pills(['Экономно', 'Сбалансированно', 'Максимум'], 'Сбалансированно') + field('Кадров в секунду', 30, 240, 60, '') + field('Чёткость', 20, 100, 100, '%') + tog('Сглаживание краёв', true) + tog('HDR-блики', false, '', 'На совместимых мониторах') + tog('Показывать FPS', false, 'fps') + field('Не гасить экран', 0, 120, 10, ' мин', { step: 5, fmt: 'off0' }), 'Пресет задаёт всё сразу'),
   card('Окно', line('Режим', pills(['Окно', 'Полный экран'], 'Окно')) + line('Формат', pills(['16:9', '9:16 для роликов'], '16:9')) + tags(['Во весь экран', '1920 × 1080', '1600 × 900', '1280 × 720'], ['1920 × 1080'])),
-  card('Файлы', line('Открывать .mid', pills(['NeonKeys', 'Спрашивать', 'Нет'], 'NeonKeys')) + line('Открывать MusicXML', pills(['NeonKeys', 'Спрашивать', 'Нет'], 'NeonKeys')) + line('Открывать .sf2', pills(['NeonKeys', 'Спрашивать', 'Нет'], 'Спрашивать'))),
+  card('Файлы', line('Открывать .mid', pills(['PianoFlows', 'Спрашивать', 'Нет'], 'PianoFlows')) + line('Открывать MusicXML', pills(['PianoFlows', 'Спрашивать', 'Нет'], 'PianoFlows')) + line('Открывать .sf2', pills(['PianoFlows', 'Спрашивать', 'Нет'], 'Спрашивать'))),
   card('Профили настроек', `<div class="presets">${['Основной', 'Стрим', 'Ролик 9:16'].map((p, i) => `<button type="button" class="preset${i === 0 ? ' on' : ''}"><b>${p}</b><small>${['изменён сегодня', 'тёмная сцена, чат скрыт', 'вертикальный кадр'][i]}</small></button>`).join('')}<button type="button" class="preset add">${icon('plus')}<b>Новый</b></button></div>` + btn('Вернуть всё по умолчанию', 'trash', 'ghost danger')),
 ];
 SET.scene = [
@@ -222,7 +222,7 @@ SET.account = [
   card('Соцсети', ['TikTok', 'Instagram', 'YouTube'].map(n => line(n, btn('Привязать', 'link', 'sm'))).join('')),
 ];
 SET.about = [
-  card('NeonKeys', `<div class="about"><span class="mark big"><span>NK</span></span><div><b>NeonKeys 1.0</b><small>Пианино-сцена для игры, тренировок и роликов</small></div></div><div class="upl">${btn('Руководства', 'book', 'sm')}${btn('Сообщить о проблеме', 'bug', 'sm', 'data-win="bug"')}${btn('Сообщество', 'chat', 'sm')}</div>`),
+  card('PianoFlows', `<div class="about"><span class="mark big"><span>NK</span></span><div><b>PianoFlows 1.0</b><small>Пианино-сцена для игры, тренировок и роликов</small></div></div><div class="upl">${btn('Руководства', 'book', 'sm')}${btn('Сообщить о проблеме', 'bug', 'sm', 'data-win="bug"')}${btn('Сообщество', 'chat', 'sm')}</div>`),
   card('Быстрый старт', `<ol class="steps"><li><b>Подключи пианино</b> по USB или Bluetooth — или играй на клавиатуре: <kbd>1</kbd> <kbd>q</kbd> <kbd>w</kbd>…</li><li><b>Открой песню</b> в Библиотеке <kbd>F1</kbd></li><li><b>Тренируйся</b> в разделе Тренировки <kbd>F2</kbd></li><li><b>Сними ролик</b> в Студии <kbd>F4</kbd></li></ol>`),
 ];
 const SETNAV = [['general', 'Основное', 'sliders'], ['scene', 'Сцена', 'palette'], ['light', 'Лучи и свет', 'sun'], ['keys', 'Клавиши', 'keys'], ['input', 'Ввод', 'kbd'], ['hotkeys', 'Горячие клавиши', 'bolt'], ['ui', 'Интерфейс', 'monitor'], ['account', 'Аккаунт', 'shield'], ['about', 'О приложении', 'info']];
@@ -251,7 +251,7 @@ const library = `
   </div>
   <div class="pane" data-pane="disk" hidden><div class="empty">${icon('folder')}<b>Подключи папку с MIDI и MusicXML</b><small>Вложенные папки, поиск и избранное — как в проводнике.</small>${btn('Выбрать папку', 'folder', 'acc')}</div></div>
   <div class="pane" data-pane="ws" hidden><div class="wsgrid">${['Hollow Knight — Main Theme', 'Megalovania', 'Dream Aria', 'Попурри Шопена', 'Lofi — Rainy Night', 'Zelda — Lost Woods'].map((t, i) => `<button type="button" class="ws"><i style="--h:${i * 60}"></i><b>${t}</b><small>${i % 2 ? 'MIDI' : 'ноты'} · ${120 + i * 37} подписок</small></button>`).join('')}</div><div class="upl">${btn('Опубликовать ноты', 'plus', 'sm')}${btn('Опубликовать MIDI', 'plus', 'sm')}</div></div>
-  <div class="pane" data-pane="scan" hidden><div class="scan"><div class="drop">${icon('scan')}<b>Перетащи фото или PDF с нотами</b><small>NeonKeys распознает буквенные ноты и откроет их в блокноте</small>${btn('Выбрать файл', 'upload', 'acc')}</div><div class="scanprev"><span class="pg"></span><span class="pg"></span><span class="pg"></span></div></div></div>
+  <div class="pane" data-pane="scan" hidden><div class="scan"><div class="drop">${icon('scan')}<b>Перетащи фото или PDF с нотами</b><small>PianoFlows распознает буквенные ноты и откроет их в блокноте</small>${btn('Выбрать файл', 'upload', 'acc')}</div><div class="scanprev"><span class="pg"></span><span class="pg"></span><span class="pg"></span></div></div></div>
 </div>`;
 
 // ---------------- trainings hub ----------------
@@ -434,7 +434,7 @@ const WINS = {
   ai: ['Аудио → MIDI', `<div class="drop sm">${icon('ai')}<b>Перетащи аудио</b><small>mp3, wav, flac, ogg, m4a</small></div><div class="aiprog">${cap('song.mp3')}<div class="bar"><b style="width:64%"></b></div>${note('Распознаю ноты · 64%')}</div>`],
   monitor: ['MIDI-монитор', `<div class="upl">${btn('Пауза', 'pause', 'sm')}${btn('Очистить', 'trash', 'sm')}${btn('JSON', 'copy', 'sm')}</div><div class="mon">${[['04.120', 'SE61', 'нота вкл', 'C4 · 96'], ['04.388', 'SE61', 'нота выкл', 'C4'], ['04.402', 'клавиатура', 'нота вкл', 'C4 · 104'], ['05.010', 'SE61', 'педаль', '127'], ['05.221', 'выход', 'подсветка', 'E4']].map(r => `<div>${r.map(c => `<span>${c}</span>`).join('')}</div>`).join('')}</div>`],
   pitch: ['Питч и вибрато', `<div class="pm"><span class="vs"><input type="range" min="-100" max="100" value="0" class="vert"><small>ПИТЧ</small></span><span class="vs"><input type="range" min="0" max="127" value="0" class="vert"><small>ВИБРАТО</small></span><div>${field('Диапазон бенда', 1, 12, 2, ' пт')}${field('Плавность клавиш', 0, 500, 100, ' мс', { step: 25 })}${bind('Вверх', '')}${bind('Вниз', '')}${bind('Вибрато', '')}</div></div>`],
-  browser: ['Браузер', `<div class="urlbar">${btn('', 'back', 'sm')}${btn('', 'loop', 'sm')}<span class="url">https://musescore.com</span></div><div class="fakepage"><b>MuseScore</b><small>ноты и MIDI — прямо внутри NeonKeys</small><i></i><i></i><i></i></div>`],
+  browser: ['Браузер', `<div class="urlbar">${btn('', 'back', 'sm')}${btn('', 'loop', 'sm')}<span class="url">https://musescore.com</span></div><div class="fakepage"><b>MuseScore</b><small>ноты и MIDI — прямо внутри PianoFlows</small><i></i><i></i><i></i></div>`],
   ideas: ['Идеи сообщества', `${[['Дуэль 1 на 1 на скорость', 342], ['Свои раскладки для аналоговых клавиатур', 128], ['Экспорт MusicXML из редактора', 97]].map(([t, v], i) => `<div class="idea"><button type="button" class="vote${i === 0 ? ' on' : ''}">${icon('up')}<b>${v}</b></button><span>${t}</span></div>`).join('')}${btn('Предложить', 'plus', 'ghost wide')}`],
   bug: ['Сообщить о проблеме', `${cap('Что случилось?')}<textarea class="in" rows="4" placeholder="Что сделал, что ожидал, что вышло"></textarea>${tog('Приложить журнал', true)}${btn('Отправить', 'send', 'acc wide')}`],
   sf2: ['Собрать свой звук', `<div class="drop sm">${icon('upload')}<b>Перетащи сэмплы</b><small>Высоту беру из имени: C4.wav, A#3.wav</small></div>${tog('Растянуть на все 88 клавиш', true)}${btn('Собрать .sf2', 'save', 'acc wide')}`],
@@ -442,10 +442,10 @@ const WINS = {
 const winsHtml = Object.entries(WINS).map(([k, [t, b]], i) => `<section class="win" id="w-${k}" hidden style="left:${420 + (i % 4) * 40}px;top:${100 + (i % 4) * 30}px"><header class="wh"><b>${t}</b><button type="button" class="xb" data-close-win aria-label="Закрыть">${icon('x')}</button></header><div class="wb">${b}</div></section>`).join('');
 const MODALS = {
   daily: `<div class="dailym"><span class="flbig">${icon('flame')}</span><b>12 дней подряд</b><small>Каждый день подряд добавляет +10 монет к награде</small><div class="week">${['пн', 'вт', 'ср', 'чт', 'пт', 'сб', 'вс'].map((d, i) => `<span class="${i < 5 ? 'got' : i === 5 ? 'now' : ''}"><small>${d}</small><b>${110 + i * 10}</b></span>`).join('')}</div><button type="button" class="btn acc wide" data-claim><span>Забрать 170</span><span class="coin"></span></button></div>`,
-  quit: `<div class="confirm"><b>Закрыть NeonKeys?</b><small>MIDI-запись этой сессии сохранится сама.</small><div class="upl">${btn('Остаться', '', '', 'data-close-modal')}${btn('Выйти из аккаунта', '', 'ghost', 'data-close-modal')}${btn('Закрыть', 'power', 'danger', 'data-close-modal')}</div></div>`,
+  quit: `<div class="confirm"><b>Закрыть PianoFlows?</b><small>MIDI-запись этой сессии сохранится сама.</small><div class="upl">${btn('Остаться', '', '', 'data-close-modal')}${btn('Выйти из аккаунта', '', 'ghost', 'data-close-modal')}${btn('Закрыть', 'power', 'danger', 'data-close-modal')}</div></div>`,
   newroom: `<div class="form"><b class="mt">Новая комната</b><div class="stack">${inp('Название', 'Комната Ронни')}${inp('Пароль (необязательно)')}</div><div class="modes" data-single>${[['По очереди', 'каждый играет свой ход'], ['Все сразу', 'общий джем'], ['Рисуем', 'рисуешь — остальные угадывают'], ['Угадай песню', 'играешь — угадывают в чате'], ['Виселица', 'угадываем слово по буквам'], ['Слово из 5', 'шесть попыток на слово']].map(([n, d], i) => `<button type="button" class="${i ? '' : 'on'}"><b>${n}</b><small>${d}</small></button>`).join('')}</div>${field('Мест', 4, 30, 12, '')}${field('Время хода', 15, 600, 120, '', { step: 15, fmt: 'time' })}${line('Голос', pills(['Все', 'Кто играет', 'По кнопке', 'Нет'], 'Кто играет'))}${tog('Зрители', true)}${tog('Голосование за исключение', true)}<div class="upl">${btn('Отмена', '', 'ghost', 'data-close-modal')}<button type="button" class="btn acc" data-close-modal data-tab="room" data-join="Комната Ронни|По очереди"><span>Создать</span></button></div></div>`,
   render: `<div class="form"><b class="mt">Видео из файла</b>${line('Кадр', pills(['16:9', '9:16', 'Оба'], '9:16'))}${line('Качество', pills(['720p', '1080p', '4K'], '1080p'))}${field('Кадров в секунду', 24, 60, 30, '')}${tog('Рамка безопасной зоны для соцсетей', true)}${tog('Отражение под пианино', true)}${tog('Ноты поверх видео')}${tog('Прозрачный фон')}<div class="upl">${btn('Отмена', '', 'ghost', 'data-close-modal')}${btn('Выбрать файл и начать', 'film', 'acc', 'data-close-modal')}</div></div>`,
-  submit: `<div class="form"><b class="mt">Ролик за награду</b>${note('Ссылка на TikTok, Reels или YouTube с «NeonKeys» в названии или описании. Раз в сутки на каждую площадку.')}${inp('https://…')}${tog('Это мой ролик', true)}<div class="upl">${btn('Отмена', '', 'ghost', 'data-close-modal')}${btn('Отправить', 'send', 'acc', 'data-close-modal')}</div></div>`,
+  submit: `<div class="form"><b class="mt">Ролик за награду</b>${note('Ссылка на TikTok, Reels или YouTube с «PianoFlows» в названии или описании. Раз в сутки на каждую площадку.')}${inp('https://…')}${tog('Это мой ролик', true)}<div class="upl">${btn('Отмена', '', 'ghost', 'data-close-modal')}${btn('Отправить', 'send', 'acc', 'data-close-modal')}</div></div>`,
 };
 const modalHtml = `<div class="modal" id="modal" hidden><div class="mbox">${Object.entries(MODALS).map(([k, v]) => `<div class="pane" data-m="${k}" hidden>${v}</div>`).join('')}<button type="button" class="xb mclose" data-close-modal aria-label="Закрыть">${icon('x')}</button></div></div>`;
 const pops = `
@@ -473,7 +473,7 @@ const panels = [
 const css = fs.readFileSync(path.join(__dirname, 'style3.css'), 'utf8').replace('/*STARS_A*/', stars(180, .45)).replace('/*STARS_B*/', stars(60, .75));
 const js = fs.readFileSync(path.join(__dirname, 'app3.js'), 'utf8');
 const keyData = JSON.stringify(Object.fromEntries(Object.entries(keyX).map(([m, k]) => [m, [+k.x.toFixed(2), +k.w.toFixed(2), k.black ? 1 : 0]])));
-const html = `<title>NeonKeys Prototype</title>
+const html = `<title>PianoFlows Prototype</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap">
