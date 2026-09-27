@@ -1,3 +1,3 @@
 # My-Mods
 
-- [Glow Tiles](glow-tiles/) — неоновая музыкальная игра в духе PianoGlow (HTML5, один файл).
+- [NeonKeys](neon-keys/) — неоновое пианино и визуализатор в духе PianoGlow: MIDI и QWERTY, падающие ноты, запись MIDI. Десктоп (Windows .exe, Electron) и браузер.
