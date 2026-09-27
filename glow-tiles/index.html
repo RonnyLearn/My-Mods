@@ -1,0 +1,855 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#05030f">
+<title>Glow Tiles</title>
+<style>
+  :root {
+    --bg: #05030f;
+    --c1: #39e6ff;
+    --c2: #ff3fd8;
+    --gold: #ffd35a;
+    --text: #eaf6ff;
+    --muted: #8a93b8;
+  }
+  html, body {
+    margin: 0; height: 100%; overflow: hidden;
+    background: var(--bg); color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    user-select: none; -webkit-user-select: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  canvas { position: fixed; inset: 0; display: block; touch-action: none; }
+
+  .overlay {
+    position: fixed; inset: 0; display: flex; flex-direction: column;
+    padding: 16px; box-sizing: border-box; overflow-y: auto;
+    background: rgba(5, 3, 15, .6);
+    -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+  }
+  .overlay.hidden { display: none; }
+  .panel { width: min(420px, 100%); margin: auto; text-align: center; }
+
+  h1 {
+    margin: 0 0 4px; font-size: clamp(34px, 11vw, 60px); font-weight: 900; white-space: nowrap;
+    letter-spacing: .06em; color: #fff;
+    text-shadow: 0 0 6px var(--c1), 0 0 22px var(--c1), 0 0 48px var(--c2);
+    animation: flicker 4s infinite;
+  }
+  @keyframes flicker { 0%, 92%, 100% { opacity: 1 } 94% { opacity: .75 } 96% { opacity: 1 } 97% { opacity: .85 } }
+  h2 {
+    margin: 0 0 8px; font-size: 28px; color: #fff;
+    text-shadow: 0 0 10px var(--c2), 0 0 30px var(--c2);
+  }
+  .sub { color: var(--muted); margin: 0 0 18px; line-height: 1.45; font-size: 14px; }
+  kbd {
+    display: inline-block; padding: 1px 6px; border-radius: 5px;
+    border: 1px solid rgba(57, 230, 255, .5); color: var(--c1); font: 600 12px ui-monospace, monospace;
+  }
+
+  .songs { display: grid; gap: 10px; margin: 0 0 16px; }
+  .song {
+    display: flex; justify-content: space-between; align-items: center; gap: 12px;
+    padding: 14px 16px; border-radius: 14px; cursor: pointer;
+    border: 1px solid rgba(57, 230, 255, .35);
+    background: linear-gradient(135deg, rgba(57, 230, 255, .10), rgba(255, 63, 216, .08));
+    color: inherit; font: inherit; text-align: left;
+    box-shadow: inset 0 0 18px rgba(57, 230, 255, .12);
+    transition: transform .12s, box-shadow .12s, border-color .12s;
+  }
+  .song:hover, .song:focus-visible {
+    outline: none; transform: translateY(-2px); border-color: var(--c1);
+    box-shadow: inset 0 0 18px rgba(57, 230, 255, .2), 0 0 22px rgba(57, 230, 255, .4);
+  }
+  .song b { display: block; font-size: 16px; }
+  .song small { color: var(--muted); font-size: 12px; }
+  .song .meta { text-align: right; flex: none; }
+  .dots { color: var(--c2); letter-spacing: 2px; font-size: 12px; text-shadow: 0 0 8px var(--c2); }
+  .best { color: var(--gold); font-size: 12px; }
+
+  .big {
+    font-size: 72px; font-weight: 900; margin: 4px 0; color: #fff;
+    text-shadow: 0 0 12px var(--c1), 0 0 36px var(--c1);
+  }
+  .record { color: var(--gold); font-weight: 700; min-height: 1.4em; text-shadow: 0 0 12px var(--gold); }
+  .row { display: flex; gap: 10px; justify-content: center; margin-top: 18px; flex-wrap: wrap; }
+  .btn {
+    padding: 12px 22px; border-radius: 999px; cursor: pointer; min-width: 130px;
+    font-weight: 700; font-size: 15px; font-family: inherit; color: #fff;
+    border: 1px solid var(--c1); background: rgba(57, 230, 255, .12);
+    box-shadow: 0 0 16px rgba(57, 230, 255, .35), inset 0 0 12px rgba(57, 230, 255, .2);
+    transition: transform .1s, box-shadow .1s;
+  }
+  .btn:hover, .btn:focus-visible { outline: none; transform: scale(1.04); box-shadow: 0 0 26px rgba(57, 230, 255, .6), inset 0 0 12px rgba(57, 230, 255, .3); }
+  .btn.alt { border-color: var(--c2); background: rgba(255, 63, 216, .1); box-shadow: 0 0 16px rgba(255, 63, 216, .3), inset 0 0 12px rgba(255, 63, 216, .15); }
+
+  #pauseBtn {
+    position: fixed; top: max(12px, env(safe-area-inset-top)); right: 12px; z-index: 2;
+    width: 42px; height: 42px; border-radius: 50%; cursor: pointer;
+    border: 1px solid rgba(57, 230, 255, .45); background: rgba(5, 3, 15, .5); color: var(--c1);
+    font: 700 14px system-ui, sans-serif;
+  }
+  #pauseBtn.hidden { display: none; }
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<button id="pauseBtn" class="hidden" aria-label="Пауза">❚❚</button>
+
+<div id="menu" class="overlay">
+  <div class="panel">
+    <h1>GLOW TILES</h1>
+    <p class="sub">Нажимай на светящиеся плитки снизу вверх — и играй мелодию.<br>
+      Длинные плитки нужно удерживать. Не пропускай и не промахивайся!<br>
+      Клавиатура: <kbd>D</kbd> <kbd>F</kbd> <kbd>J</kbd> <kbd>K</kbd></p>
+    <div id="songs" class="songs"></div>
+  </div>
+</div>
+
+<div id="over" class="overlay hidden">
+  <div class="panel">
+    <h2 id="overTitle">Игра окончена</h2>
+    <div id="overSong" class="sub"></div>
+    <div id="overScore" class="big">0</div>
+    <div id="overStars" class="best"></div>
+    <div id="overRecord" class="record"></div>
+    <div id="overBest" class="sub"></div>
+    <div class="row">
+      <button id="retryBtn" class="btn">Ещё раз</button>
+      <button id="menuBtn" class="btn alt">Меню</button>
+    </div>
+  </div>
+</div>
+
+<div id="pause" class="overlay hidden">
+  <div class="panel">
+    <h2>Пауза</h2>
+    <div class="row">
+      <button id="resumeBtn" class="btn">Продолжить</button>
+      <button id="quitBtn" class="btn alt">Меню</button>
+    </div>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+// ---------------------------------------------------------------------------
+// Songs. Tokens are separated by spaces: "E5" — a note, "A4+A2" — a chord,
+// ":2" suffix — a long (hold) tile. All melodies are in the public domain.
+// ---------------------------------------------------------------------------
+const SONGS = [
+  {
+    id: 'twinkle', title: 'Twinkle Twinkle', author: 'Народная мелодия', speed: 2.5, level: 1,
+    notes: `C5+C3 C5 G5 G5 A5+F3 A5 G5+C3:2 F5+F3 F5 E5+C3 E5 D5+G2 D5 C5+C3:2
+            G5+C3 G5 F5+F3 F5 E5+C3 E5 D5+G2:2 G5+C3 G5 F5+F3 F5 E5+C3 E5 D5+G2:2
+            C5+C3 C5 G5 G5 A5+F3 A5 G5+C3:2 F5+F3 F5 E5+C3 E5 D5+G2 D5 C5+C3:2`,
+  },
+  {
+    id: 'ode', title: 'Ода к радости', author: 'Л. ван Бетховен', speed: 2.8, level: 1,
+    notes: `E5+C3 E5 F5 G5 G5+G2 F5 E5 D5 C5+C3 C5 D5 E5 E5+G2 D5 D5:2
+            E5+C3 E5 F5 G5 G5+G2 F5 E5 D5 C5+C3 C5 D5 E5 D5+G2 C5 C5+C3:2
+            D5+G2 D5 E5 C5 D5+G2 E5 F5 E5 C5 D5+G2 E5 F5 E5 D5 C5+C3 D5 G4+G2:2
+            E5+C3 E5 F5 G5 G5+G2 F5 E5 D5 C5+C3 C5 D5 E5 D5+G2 C5 C5+C3:2`,
+  },
+  {
+    id: 'jingle', title: 'Jingle Bells', author: 'Дж. Пьерпонт', speed: 3.0, level: 2,
+    notes: `E5+C3 E5 E5:2 E5+C3 E5 E5:2 E5+C3 G5 C5 D5 E5+C3:2
+            F5+F2 F5 F5 F5 F5+C3 E5 E5 E5 E5+D3 D5 D5 E5 D5+G2:2 G5+G2:2
+            E5+C3 E5 E5:2 E5+C3 E5 E5:2 E5+C3 G5 C5 D5 E5+C3:2
+            F5+F2 F5 F5 F5 F5+C3 E5 E5 E5 G5+G2 G5 F5 D5 C5+C3:2`,
+  },
+  {
+    id: 'elise', title: 'К Элизе', author: 'Л. ван Бетховен', speed: 3.1, level: 2,
+    notes: `E5 D#5 E5 D#5 E5 B4 D5 C5 A4+A2:2 C4 E4 A4 B4+E2:2 E4 G#4 B4 C5+A2:2
+            E4 E5 D#5 E5 D#5 E5 B4 D5 C5 A4+A2:2 C4 E4 A4 B4+E2:2 E4 C5 B4 A4+A2:2`,
+  },
+  {
+    id: 'canon', title: 'Канон ре мажор', author: 'И. Пахельбель', speed: 3.2, level: 3,
+    notes: `F#5+D3:2 E5+A2:2 D5+B2:2 C#5+F#2:2 B4+G2:2 A4+D2:2 B4+G2:2 C#5+A2:2
+            D5+D3 F#5 A5+A2 G5 F#5+B2 D5 F#5+F#2 E5 D5+G2 B4 D5+D2 A5 G5+G2 B5 A5+A2 G5`,
+  },
+  {
+    id: 'hall', title: 'В пещере горного короля', author: 'Э. Григ', speed: 3.5, level: 3,
+    notes: `B4+B2 C#5 D5 E5 F#5+B2 D5 F#5:2 F5+C#3 C#5 F5:2 E5+C3 C5 E5:2
+            B4+B2 C#5 D5 E5 F#5+B2 D5 F#5 B5 A5+F#2 F#5 D5 F#5 A5:2`,
+  },
+];
+
+const NOTE_IDX = { C: 0, 'C#': 1, Db: 1, D: 2, 'D#': 3, Eb: 3, E: 4, F: 5, 'F#': 6, Gb: 6,
+                   G: 7, 'G#': 8, Ab: 8, A: 9, 'A#': 10, Bb: 10, B: 11 };
+
+function noteFreq(name) {
+  const m = /^([A-G](?:#|b)?)(-?\d)$/.exec(name);
+  if (!m) throw new Error('Bad note: ' + name);
+  const midi = (+m[2] + 1) * 12 + NOTE_IDX[m[1]];
+  return 440 * Math.pow(2, (midi - 69) / 12);
+}
+
+function parseSong(str) {
+  return str.trim().split(/\s+/).map(tok => {
+    const [notes, len] = tok.split(':');
+    return { freqs: notes.split('+').map(noteFreq), len: len ? +len : 1 };
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Audio: a small additive "piano" synth with a filtered envelope and an echo.
+// ---------------------------------------------------------------------------
+let actx = null, master = null, pianoWave = null;
+
+function initAudio() {
+  if (actx) { if (actx.state === 'suspended') actx.resume(); return; }
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC) return;
+  actx = new AC();
+
+  const comp = actx.createDynamicsCompressor();
+  comp.threshold.value = -16; comp.ratio.value = 4;
+  comp.connect(actx.destination);
+
+  master = actx.createGain();
+  master.gain.value = 0.55;
+  master.connect(comp);
+
+  // Soft echo for the "glow" feel.
+  const delay = actx.createDelay(1);
+  delay.delayTime.value = 0.19;
+  const fb = actx.createGain(); fb.gain.value = 0.28;
+  const tone = actx.createBiquadFilter(); tone.type = 'lowpass'; tone.frequency.value = 2400;
+  const wet = actx.createGain(); wet.gain.value = 0.22;
+  master.connect(delay); delay.connect(tone); tone.connect(fb); fb.connect(delay);
+  tone.connect(wet); wet.connect(comp);
+
+  const real = new Float32Array([0, 1, 0.5, 0.28, 0.16, 0.1, 0.06, 0.035, 0.02]);
+  pianoWave = actx.createPeriodicWave(real, new Float32Array(real.length));
+}
+
+function playTone(freq, vel, hold) {
+  const t = actx.currentTime;
+  const osc = actx.createOscillator();
+  osc.setPeriodicWave(pianoWave);
+  osc.frequency.value = freq;
+  const shimmer = actx.createOscillator();
+  shimmer.type = 'sine';
+  shimmer.frequency.value = freq * 2.004;
+  const shimmerGain = actx.createGain();
+  shimmerGain.gain.value = 0.12;
+
+  const filt = actx.createBiquadFilter();
+  filt.type = 'lowpass';
+  filt.frequency.setValueAtTime(Math.min(freq * 9, 15000), t);
+  filt.frequency.setTargetAtTime(Math.max(freq * 2.2, 350), t, 0.35);
+
+  const g = actx.createGain();
+  const decay = Math.max(0.35, Math.min(1.6, 0.7 * Math.sqrt(262 / freq)));
+  g.gain.setValueAtTime(0, t);
+  g.gain.linearRampToValueAtTime(0.3 * vel, t + 0.005);
+  g.gain.setTargetAtTime(hold ? 0.12 * vel : 0, t + 0.005, hold ? 0.5 : decay);
+
+  osc.connect(filt); shimmer.connect(shimmerGain); shimmerGain.connect(filt);
+  filt.connect(g); g.connect(master);
+  osc.start(t); shimmer.start(t);
+
+  const stopAt = when => { try { osc.stop(when); shimmer.stop(when); } catch (e) { /* already stopped */ } };
+  if (!hold) stopAt(t + decay * 6);
+  return {
+    release(tau = 0.1) {
+      const now = actx.currentTime;
+      g.gain.cancelScheduledValues(now);
+      g.gain.setTargetAtTime(0, now, tau);
+      stopAt(now + tau * 8);
+    },
+  };
+}
+
+function playChord(freqs, hold) {
+  if (!actx) return null;
+  const voices = freqs.map((f, i) => playTone(f, i === 0 ? 1 : 0.55, hold));
+  return { release(tau) { voices.forEach(v => v.release(tau)); } };
+}
+
+function playFail() {
+  if (!actx) return;
+  const t = actx.currentTime;
+  const osc = actx.createOscillator();
+  osc.type = 'sawtooth';
+  osc.frequency.setValueAtTime(180, t);
+  osc.frequency.exponentialRampToValueAtTime(55, t + 0.5);
+  const filt = actx.createBiquadFilter();
+  filt.type = 'lowpass'; filt.frequency.value = 900;
+  const g = actx.createGain();
+  g.gain.setValueAtTime(0.35, t);
+  g.gain.exponentialRampToValueAtTime(0.001, t + 0.6);
+  osc.connect(filt); filt.connect(g); g.connect(master);
+  osc.start(t); osc.stop(t + 0.65);
+}
+
+// ---------------------------------------------------------------------------
+// Storage (best scores) — optional, the game works without it.
+// ---------------------------------------------------------------------------
+function loadBest(id) {
+  try { return +localStorage.getItem('glowtiles.best.' + id) || 0; } catch (e) { return 0; }
+}
+function saveBest(id, v) {
+  try { localStorage.setItem('glowtiles.best.' + id, String(v)); } catch (e) { /* ignore */ }
+}
+
+// ---------------------------------------------------------------------------
+// Layout
+// ---------------------------------------------------------------------------
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+let W = 0, H = 0, gx = 0, gw = 0, colW = 0, rowH = 0, bgGrad = null;
+
+function resize() {
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  W = window.innerWidth; H = window.innerHeight;
+  canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
+  canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  gw = Math.min(W, H * 0.62);
+  gx = (W - gw) / 2;
+  colW = gw / 4;
+  rowH = H / 4;
+  bgGrad = ctx.createLinearGradient(0, 0, 0, H);
+  bgGrad.addColorStop(0, '#0a0620');
+  bgGrad.addColorStop(0.6, '#060414');
+  bgGrad.addColorStop(1, '#0b0322');
+}
+window.addEventListener('resize', resize);
+resize();
+
+// ---------------------------------------------------------------------------
+// Game state
+// ---------------------------------------------------------------------------
+const LAP_HUES = [190, 290, 330, 45, 140, 250];
+const hueFor = lap => LAP_HUES[(lap - 1) % LAP_HUES.length];
+
+const G = {
+  state: 'menu',          // menu | ready | play | fail | over | pause
+  song: null, notes: [],
+  tiles: [], cur: 0,      // cur = index of the lowest tile not yet pressed
+  noteIdx: 0, nextRow: 0, genLap: 1, lastLane: -1,
+  s: 0,                   // scroll position in rows
+  speed: 0,               // rows per second
+  lap: 1, hitsInLap: 0, score: 0,
+  holds: new Map(),       // input key -> hold tile being held
+  failTile: null, failT: 0, scrollBack: null,
+  particles: [], ripples: [], flashes: [0, 0, 0, 0],
+  banner: null, pulse: 0, time: 0,
+};
+
+const dust = Array.from({ length: 60 }, () => ({ x: Math.random(), y: Math.random(), z: 0.25 + Math.random() * 0.75 }));
+
+const yBottom = t => H + (G.s - t.row) * rowH - rowH;
+
+function ensureTiles() {
+  while (G.nextRow < G.s + 7) {
+    const n = G.notes[G.noteIdx];
+    let lane;
+    do { lane = Math.floor(Math.random() * 4); } while (lane === G.lastLane);
+    G.lastLane = lane;
+    G.tiles.push({
+      row: G.nextRow, len: n.len, lane, freqs: n.freqs, lap: G.genLap,
+      lapStart: G.noteIdx === 0 && G.genLap > 1,
+      hit: false, hitT: 0, holding: false, holdS: 0, filled: 0, handle: null,
+    });
+    G.nextRow += n.len;
+    if (++G.noteIdx >= G.notes.length) { G.noteIdx = 0; G.genLap++; }
+  }
+}
+
+function targetSpeed() {
+  const b = G.song.speed;
+  const inLap = Math.min(G.hitsInLap, G.notes.length) / G.notes.length;
+  return b * (1 + 0.14 * (G.lap - 1)) * (1 + 0.12 * inLap);
+}
+
+function startSong(song) {
+  initAudio();
+  Object.assign(G, {
+    song, notes: parseSong(song.notes), tiles: [], cur: 0,
+    noteIdx: 0, nextRow: 0, genLap: 1, lastLane: -1,
+    s: 0, speed: song.speed, lap: 1, hitsInLap: 0, score: 0,
+    failTile: null, failT: 0, scrollBack: null,
+    particles: [], ripples: [], flashes: [0, 0, 0, 0], banner: null, pulse: 0,
+  });
+  G.holds.clear();
+  ensureTiles();
+  G.state = 'ready';
+  showOverlay(null);
+}
+
+// ---------------------------------------------------------------------------
+// Input handling
+// ---------------------------------------------------------------------------
+function press(lane, key, y) {
+  if (lane < 0) return;
+  const c = G.tiles[G.cur];
+  if (!c) return;
+  if (G.state === 'ready') {
+    if (lane === c.lane) { G.state = 'play'; hitTile(c, key); }
+    return;
+  }
+  if (G.state !== 'play') return;
+  if (lane === c.lane) {
+    hitTile(c, key);
+  } else {
+    const row = y == null ? c.row : Math.floor(G.s - 1 + (H - y) / rowH);
+    fail({ lane, row, len: 1 }, 'wrong');
+  }
+}
+
+function release(key) {
+  const t = G.holds.get(key);
+  if (!t) return;
+  G.holds.delete(key);
+  endHold(t, false);
+}
+
+function hitTile(t, key) {
+  t.hit = true;
+  t.hitT = G.time;
+  G.cur++;
+  G.score++;
+  G.hitsInLap++;
+  G.pulse = 1;
+  G.flashes[t.lane] = 1;
+  t.handle = playChord(t.freqs, t.len > 1);
+  if (t.len > 1) {
+    t.holding = true;
+    t.holdS = G.s;
+    t.filled = 1;
+    // A key can only hold one tile at a time.
+    if (G.holds.has(key)) release(key);
+    G.holds.set(key, t);
+  }
+  const cx = gx + (t.lane + 0.5) * colW;
+  const cy = Math.min(yBottom(t) - rowH / 2, H - rowH / 2);
+  burst(cx, cy, hueFor(t.lap), t.len > 1 ? 10 : 16);
+  G.ripples.push({ x: cx, y: cy, t: 0, hue: hueFor(t.lap) });
+  if (t.lapStart) {
+    G.lap = t.lap;
+    G.hitsInLap = 1;
+    G.banner = { text: '★ Круг ' + t.lap + ' — быстрее!', t: 0 };
+  }
+}
+
+function endHold(t, complete) {
+  t.holding = false;
+  if (t.handle) t.handle.release(complete ? 0.45 : 0.1);
+  t.hitT = G.time;
+  if (complete) {
+    G.score++;
+    const cx = gx + (t.lane + 0.5) * colW;
+    burst(cx, Math.max(yBottom(t) - t.len * rowH, 20), hueFor(t.lap), 24);
+  }
+}
+
+function releaseAllHolds() {
+  for (const t of G.holds.values()) endHold(t, false);
+  G.holds.clear();
+}
+
+function fail(tile, kind) {
+  releaseAllHolds();
+  G.state = 'fail';
+  G.failTile = tile;
+  G.failT = 0;
+  // On a miss, scroll back so the missed tile is fully visible.
+  G.scrollBack = kind === 'miss' ? tile.row + 0.8 : null;
+  playFail();
+  if (navigator.vibrate) { try { navigator.vibrate(120); } catch (e) { /* ignore */ } }
+}
+
+const laneAt = x => { const l = Math.floor((x - gx) / colW); return l >= 0 && l < 4 ? l : -1; };
+
+canvas.addEventListener('pointerdown', e => {
+  e.preventDefault();
+  if (actx && actx.state === 'suspended') actx.resume();
+  press(laneAt(e.clientX), 'p' + e.pointerId, e.clientY);
+});
+window.addEventListener('pointerup', e => release('p' + e.pointerId));
+window.addEventListener('pointercancel', e => release('p' + e.pointerId));
+canvas.addEventListener('contextmenu', e => e.preventDefault());
+
+const KEY_LANES = { KeyD: 0, KeyF: 1, KeyJ: 2, KeyK: 3, Digit1: 0, Digit2: 1, Digit3: 2, Digit4: 3 };
+window.addEventListener('keydown', e => {
+  if (e.code in KEY_LANES) {
+    e.preventDefault();
+    if (!e.repeat) press(KEY_LANES[e.code], 'k' + e.code, null);
+  } else if (e.code === 'Escape' || e.code === 'KeyP') {
+    if (G.state === 'play' || G.state === 'ready') pause();
+    else if (G.state === 'pause') resume();
+  } else if ((e.code === 'Space' || e.code === 'Enter') && G.state === 'over') {
+    e.preventDefault();
+    startSong(G.song);
+  }
+});
+window.addEventListener('keyup', e => { if (e.code in KEY_LANES) release('k' + e.code); });
+
+// ---------------------------------------------------------------------------
+// Effects
+// ---------------------------------------------------------------------------
+function burst(x, y, hue, n) {
+  for (let i = 0; i < n; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const v = 60 + Math.random() * 260;
+    G.particles.push({
+      x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v - 80,
+      life: 0, max: 0.4 + Math.random() * 0.5, hue: hue + (Math.random() * 40 - 20),
+      size: 1.5 + Math.random() * 2.5,
+    });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Update
+// ---------------------------------------------------------------------------
+function update(dt) {
+  G.time += dt;
+
+  if (G.state === 'play') {
+    G.speed += (targetSpeed() - G.speed) * Math.min(1, dt * 1.5);
+    G.s += G.speed * dt;
+    ensureTiles();
+
+    for (const [key, t] of G.holds) {
+      t.filled = Math.min(t.len, G.s - t.holdS + 1);
+      if (t.filled >= t.len) { G.holds.delete(key); endHold(t, true); }
+    }
+
+    const c = G.tiles[G.cur];
+    if (c && yBottom(c) - c.len * rowH > H - rowH * 0.45) fail(c, 'miss');
+
+    // Drop tiles that have scrolled far below the screen.
+    let k = 0;
+    while (k < G.cur && yBottom(G.tiles[k]) - G.tiles[k].len * rowH > H + 20 && !G.tiles[k].holding) k++;
+    if (k) { G.tiles.splice(0, k); G.cur -= k; }
+  } else if (G.state === 'fail') {
+    G.failT += dt;
+    if (G.scrollBack != null) G.s += (G.scrollBack - G.s) * Math.min(1, dt * 8);
+    if (G.failT > 1.1) gameOver();
+  }
+
+  for (const p of G.particles) {
+    p.life += dt; p.x += p.vx * dt; p.y += p.vy * dt;
+    p.vx *= 1 - dt * 2.5; p.vy = p.vy * (1 - dt * 2.5) + 300 * dt;
+  }
+  G.particles = G.particles.filter(p => p.life < p.max);
+  for (const r of G.ripples) r.t += dt;
+  G.ripples = G.ripples.filter(r => r.t < 0.5);
+  for (let i = 0; i < 4; i++) G.flashes[i] = Math.max(0, G.flashes[i] - dt * 4);
+  G.pulse = Math.max(0, G.pulse - dt * 3);
+  if (G.banner) { G.banner.t += dt; if (G.banner.t > 1.8) G.banner = null; }
+
+  const drift = 0.015 + (G.state === 'play' ? G.speed * 0.06 : 0);
+  for (const d of dust) { d.y += drift * d.z * dt; if (d.y > 1) { d.y -= 1; d.x = Math.random(); } }
+}
+
+// ---------------------------------------------------------------------------
+// Render
+// ---------------------------------------------------------------------------
+function rr(x, y, w, h, r) {
+  r = Math.min(r, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
+function drawBackground() {
+  ctx.fillStyle = bgGrad;
+  ctx.fillRect(0, 0, W, H);
+
+  const hue = G.song ? hueFor(G.lap) : 200;
+  const glow = ctx.createRadialGradient(W / 2, H * 1.05, 0, W / 2, H * 1.05, H * 0.9);
+  glow.addColorStop(0, `hsla(${hue},100%,55%,${0.16 + 0.14 * G.pulse})`);
+  glow.addColorStop(1, 'hsla(0,0%,0%,0)');
+  ctx.fillStyle = glow;
+  ctx.fillRect(0, 0, W, H);
+
+  for (const d of dust) {
+    ctx.fillStyle = `hsla(${hue},90%,80%,${0.15 + d.z * 0.35})`;
+    ctx.fillRect(d.x * W, d.y * H, d.z * 2, d.z * 2 + (G.state === 'play' ? G.speed * d.z * 2 : 0));
+  }
+}
+
+function drawLanes() {
+  ctx.fillStyle = 'rgba(255,255,255,0.025)';
+  ctx.fillRect(gx, 0, gw, H);
+  const hue = hueFor(G.lap);
+  for (let i = 0; i < 4; i++) {
+    const f = G.flashes[i];
+    if (f > 0) {
+      const g = ctx.createLinearGradient(0, H, 0, 0);
+      g.addColorStop(0, `hsla(${hue},100%,60%,${0.25 * f})`);
+      g.addColorStop(1, 'hsla(0,0%,0%,0)');
+      ctx.fillStyle = g;
+      ctx.fillRect(gx + i * colW, 0, colW, H);
+    }
+  }
+  ctx.strokeStyle = `hsla(${hue},80%,70%,0.12)`;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  for (let i = 0; i <= 4; i++) { const x = Math.round(gx + i * colW) + 0.5; ctx.moveTo(x, 0); ctx.lineTo(x, H); }
+  ctx.stroke();
+}
+
+function drawTile(t) {
+  const yb = yBottom(t);
+  const yt = yb - t.len * rowH;
+  if (yt > H || yb < 0) return;
+  const pad = Math.max(3, colW * 0.04);
+  const x = gx + t.lane * colW + pad, w = colW - pad * 2;
+  const y = yt + pad, h = t.len * rowH - pad * 2;
+  const r = Math.min(14, w * 0.18);
+  const hue = hueFor(t.lap);
+
+  if (!t.hit) {
+    ctx.save();
+    ctx.shadowColor = `hsla(${hue},100%,60%,0.9)`;
+    ctx.shadowBlur = 22;
+    const g = ctx.createLinearGradient(0, y, 0, y + h);
+    if (t.len > 1) {
+      g.addColorStop(0, `hsla(${hue},90%,55%,0.35)`);
+      g.addColorStop(1, `hsla(${hue + 25},95%,50%,0.85)`);
+    } else {
+      g.addColorStop(0, `hsl(${hue},95%,66%)`);
+      g.addColorStop(1, `hsl(${hue + 25},95%,46%)`);
+    }
+    ctx.fillStyle = g;
+    rr(x, y, w, h, r);
+    ctx.fill();
+    ctx.restore();
+    ctx.strokeStyle = 'rgba(255,255,255,0.45)';
+    ctx.lineWidth = 1.5;
+    rr(x, y, w, h, r);
+    ctx.stroke();
+
+    if (t.len > 1) {
+      // Hold rail + grab circle.
+      const cx = x + w / 2;
+      ctx.strokeStyle = 'rgba(255,255,255,0.7)';
+      ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.moveTo(cx, y + 16); ctx.lineTo(cx, y + h - rowH * 0.5); ctx.stroke();
+      ctx.fillStyle = '#fff';
+      ctx.beginPath(); ctx.arc(cx, y + h - rowH * 0.5, Math.min(12, w * 0.14), 0, Math.PI * 2); ctx.fill();
+    }
+
+    if (G.state === 'ready' && t === G.tiles[G.cur]) {
+      ctx.fillStyle = '#fff';
+      ctx.font = `800 ${Math.round(Math.min(22, w * 0.2))}px system-ui, sans-serif`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.shadowColor = '#fff'; ctx.shadowBlur = 12;
+      ctx.fillText(G.s === 0 ? 'СТАРТ' : '▶', x + w / 2, yb - rowH / 2);
+      ctx.shadowBlur = 0;
+    }
+    return;
+  }
+
+  // Pressed tile: faint trace…
+  ctx.fillStyle = `hsla(${hue},90%,60%,0.07)`;
+  rr(x, y, w, h, r);
+  ctx.fill();
+  ctx.strokeStyle = `hsla(${hue},90%,70%,0.18)`;
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  // …hold progress…
+  if (t.len > 1 && t.filled > 0) {
+    const fh = Math.min(h, t.filled * rowH - pad);
+    ctx.save();
+    ctx.shadowColor = `hsla(${hue},100%,65%,1)`;
+    ctx.shadowBlur = t.holding ? 30 : 12;
+    ctx.fillStyle = `hsla(${hue},100%,${t.holding ? 70 : 60}%,${t.holding ? 0.9 : 0.35})`;
+    rr(x, y + h - fh, w, fh, r);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // …and a fading flash right after the press.
+  const a = t.holding ? 0 : Math.max(0, 1 - (G.time - t.hitT) / 0.3);
+  if (a > 0) {
+    ctx.save();
+    ctx.globalAlpha = a;
+    ctx.shadowColor = `hsla(${hue},100%,70%,1)`;
+    ctx.shadowBlur = 30;
+    ctx.fillStyle = `hsla(${hue},100%,85%,0.8)`;
+    const grow = (1 - a) * 6;
+    rr(x - grow, y - grow, w + grow * 2, h + grow * 2, r);
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
+function drawFailTile() {
+  const t = G.failTile;
+  if (!t) return;
+  const yb = yBottom(t);
+  const on = Math.floor(G.failT * 8) % 2 === 0;
+  ctx.save();
+  ctx.shadowColor = '#ff2a4d';
+  ctx.shadowBlur = on ? 30 : 10;
+  ctx.fillStyle = on ? 'rgba(255,42,77,0.9)' : 'rgba(255,42,77,0.4)';
+  rr(gx + t.lane * colW + 3, yb - t.len * rowH + 3, colW - 6, t.len * rowH - 6, 12);
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawEffects() {
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  for (const r of G.ripples) {
+    const k = r.t / 0.5;
+    ctx.strokeStyle = `hsla(${r.hue},100%,70%,${1 - k})`;
+    ctx.lineWidth = 3 * (1 - k) + 0.5;
+    ctx.beginPath(); ctx.arc(r.x, r.y, 10 + k * colW * 0.8, 0, Math.PI * 2); ctx.stroke();
+  }
+  for (const p of G.particles) {
+    const k = 1 - p.life / p.max;
+    ctx.fillStyle = `hsla(${p.hue},100%,70%,${k})`;
+    ctx.beginPath(); ctx.arc(p.x, p.y, p.size * (0.5 + k), 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawHud() {
+  const hue = hueFor(G.lap);
+  const top = 18;
+
+  // Progress through the current lap.
+  const frac = Math.min(1, G.hitsInLap / G.notes.length);
+  ctx.fillStyle = 'rgba(255,255,255,0.08)';
+  ctx.fillRect(gx, 0, gw, 4);
+  ctx.save();
+  ctx.shadowColor = `hsl(${hue},100%,60%)`; ctx.shadowBlur = 10;
+  ctx.fillStyle = `hsl(${hue},100%,65%)`;
+  ctx.fillRect(gx, 0, gw * frac, 4);
+  ctx.restore();
+
+  ctx.save();
+  ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+  ctx.font = '900 56px system-ui, sans-serif';
+  ctx.shadowColor = `hsl(${hue},100%,60%)`; ctx.shadowBlur = 18 + 16 * G.pulse;
+  ctx.fillStyle = '#fff';
+  ctx.fillText(String(G.score), W / 2, top);
+  if (G.lap > 1) {
+    const stars = G.lap - 1;
+    ctx.font = '700 20px system-ui, sans-serif';
+    ctx.shadowColor = '#ffd35a'; ctx.shadowBlur = 12;
+    ctx.fillStyle = '#ffd35a';
+    ctx.fillText(stars <= 5 ? '★'.repeat(stars) : '★ × ' + stars, W / 2, top + 64);
+  }
+  if (G.banner) {
+    const b = G.banner;
+    const a = Math.min(1, b.t * 5) * Math.min(1, (1.8 - b.t) * 2);
+    ctx.globalAlpha = Math.max(0, a);
+    ctx.font = `800 ${Math.round(Math.min(30, gw * 0.075))}px system-ui, sans-serif`;
+    ctx.shadowColor = '#ffd35a'; ctx.shadowBlur = 20;
+    ctx.fillStyle = '#fff';
+    ctx.fillText(b.text, W / 2, H * 0.3 - b.t * 12);
+  }
+  ctx.restore();
+}
+
+function draw() {
+  drawBackground();
+  if (G.state === 'menu') return;
+  drawLanes();
+  for (const t of G.tiles) drawTile(t);
+  if (G.state === 'fail' || G.state === 'over') drawFailTile();
+  drawEffects();
+  drawHud();
+}
+
+let last = performance.now();
+function frame(now) {
+  const dt = Math.min(0.05, (now - last) / 1000);
+  last = now;
+  update(dt);
+  draw();
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+// ---------------------------------------------------------------------------
+// Menus
+// ---------------------------------------------------------------------------
+const $ = id => document.getElementById(id);
+const overlays = { menu: $('menu'), over: $('over'), pause: $('pause') };
+
+function showOverlay(name) {
+  for (const [k, el] of Object.entries(overlays)) el.classList.toggle('hidden', k !== name);
+  $('pauseBtn').classList.toggle('hidden', name !== null);
+}
+
+function renderMenu() {
+  const list = $('songs');
+  list.textContent = '';
+  for (const song of SONGS) {
+    const b = document.createElement('button');
+    b.className = 'song';
+    const best = loadBest(song.id);
+    b.innerHTML = `<span><b></b><small></small></span>
+      <span class="meta"><span class="dots">${'●'.repeat(song.level)}${'○'.repeat(3 - song.level)}</span><br>
+      <span class="best">${best ? 'Рекорд: ' + best : ''}</span></span>`;
+    b.querySelector('b').textContent = song.title;
+    b.querySelector('small').textContent = song.author;
+    b.addEventListener('click', () => startSong(song));
+    list.appendChild(b);
+  }
+}
+
+function toMenu() {
+  releaseAllHolds();
+  G.state = 'menu';
+  G.song = null;
+  renderMenu();
+  showOverlay('menu');
+}
+
+function gameOver() {
+  G.state = 'over';
+  const best = loadBest(G.song.id);
+  const record = G.score > best;
+  if (record) saveBest(G.song.id, G.score);
+  $('overTitle').textContent = G.lap > 1 ? 'Отлично!' : 'Игра окончена';
+  $('overSong').textContent = G.song.title + ' — ' + G.song.author;
+  $('overScore').textContent = G.score;
+  $('overStars').textContent = G.lap > 1 ? '★'.repeat(Math.min(G.lap - 1, 10)) : '';
+  $('overRecord').textContent = record && G.score > 0 ? 'Новый рекорд!' : '';
+  $('overBest').textContent = 'Рекорд: ' + Math.max(best, G.score);
+  showOverlay('over');
+  $('retryBtn').focus({ preventScroll: true });
+}
+
+function pause() {
+  releaseAllHolds();
+  G.state = 'pause';
+  showOverlay('pause');
+}
+
+function resume() {
+  // Resume waits for the next correct tap, like the start of a song.
+  G.state = 'ready';
+  showOverlay(null);
+}
+
+$('retryBtn').addEventListener('click', () => startSong(G.song));
+$('menuBtn').addEventListener('click', toMenu);
+$('resumeBtn').addEventListener('click', resume);
+$('quitBtn').addEventListener('click', toMenu);
+$('pauseBtn').addEventListener('click', () => { if (G.state === 'play' || G.state === 'ready') pause(); });
+document.addEventListener('visibilitychange', () => { if (document.hidden && G.state === 'play') pause(); });
+
+renderMenu();
+</script>
+</body>
+</html>
