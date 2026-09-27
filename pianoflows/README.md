@@ -1,178 +1,178 @@
-# PianoFlows — прототип интерфейса
+# PianoFlows — Interface Prototype
 
-Кликабельный прототип пианино-приложения **PianoFlows**. Это **только визуал**: кнопки нажимаются, окна и вкладки открываются, ползунки двигаются, клавиши светятся и выпускают лучи. Настоящей логики нет: ни звука, ни сохранения, ни сервера.
+A clickable prototype for the PianoFlows piano application. This is visual-only: buttons are clickable, modals and tabs open, sliders move, and keys glow and emit light beams. There is no real backend logic: no audio synthesis, no data persistence, and no server.
 
-**Как открыть:** двойной клик по `dist/index.html` (нужен интернет только для шрифтов Google Fonts; без него подставятся системные).
-
----
-
-## 1. Идея проекта (что ты задал)
-
-Путь был такой:
-
-1. **Изучить PianoGlow** — разобрать приложение целиком: все механики, разделы, каждую кнопку и ползунок. Результат лежит в `docs/`.
-2. **Воссоздать похожий дизайн со всеми кнопками**, но лучше оригинала: больше свечения, «превзойти» → `archive/v0_статичный_макет.html` (статичная страница со всеми панелями).
-3. **Сделать рабочий макет**: чтобы можно было тыкать кнопки и открывать меню, но без настоящей работы — только визуал → `archive/v1_прототип_как_оригинал.html`.
-4. **Уйти от копии 1 к 1.** Оставить главные базовые фишки, но переделать верхнее меню, настройки, тренировки и так далее, чтобы интерфейс был заметно другим и уникальным. **3D-камеру убрать.**
-5. **Убрать «кучу цветов» и сделать единый стиль**, чтобы не выглядело как сделанное ИИ. Эффекты — не базовые, а проработанные, профессиональные: частицы, лучи и прочее → `dist/index.html` (текущая версия).
-6. **Собрать готовый проект файлом** и расписать всю идею — этот документ.
-
-### Принципы текущей версии
-- **Один цвет.** Всё построено на графите и одном акцентном цвете (по умолчанию янтарь `#f0c27b`). Лучи, искры, горизонт, переключатели и выделения — в одном тоне. Никаких радуг, разноцветных карточек и «неоновой каши».
-- **Своя компоновка**, а не копия PianoGlow: боковая панель вместо верхнего ряда кнопок, капсула справа, центральные окна, объединённые разделы.
-- **Эффекты рисует движок на canvas**, а не CSS-полоски: физика, слои света, аддитивное смешивание.
-- **Сохранены базовые фишки** оригинала: пианино на 88 клавиш с раскладкой виртуального пианино (как в Roblox), лучи от нот, тренировки, комнаты, библиотека, звук и слои, блокнот для буквенных нот, запись, валюта, серии и магазин.
+**How to open:** double-click `dist/index.html` (an internet connection is only needed for Google Fonts; without it, system fonts will be used as fallbacks).
 
 ---
 
-## 2. Что есть в прототипе
+## 1. Project Concept (What You Set Out to Do)
 
-### Главный экран
-| Элемент | Где | Что делает в макете |
+The development path was as follows:
+
+1. **Study PianoGlow** — break down the application entirely: all mechanics, sections, every single button, and slider. The findings are documented in `docs/`.
+2. **Recreate a similar design with all controls, but elevate it beyond the original**: more glow, "outdoing" it → `archive/v0_статичный_макет.html` (a static page containing all panels).
+3. **Build an interactive prototype**: allowing users to click buttons and navigate menus without actual backend processing — pure visual interaction → `archive/v1_прототип_как_оригинал.html`.
+4. **Move away from a 1:1 copy.** Retain the core essentials, but overhaul the top navigation, settings, practice modes, etc., giving the interface a distinct and unique identity. **The 3D camera has been removed.**
+5. **Eliminate visual clutter ("color soup") and create a cohesive design system** so it doesn't look like generic AI output. Visual effects are refined and professional rather than basic: particles, light beams, and more → `dist/index.html` (current version).
+6. **Package the project into a single deliverable and thoroughly document the concept** — this README.
+
+### Core Principles of the Current Version
+- **Monochromatic accent.** Everything is built upon a graphite palette with a single accent color (defaulting to amber `#f0c27b`). Beams, sparks, the horizon line, toggles, and highlights all share the same tone. No rainbow gradients, multicolored cards, or "neon mess."
+- **Custom layout, distinct from PianoGlow**: a sidebar replaces the top button row, a status capsule sits at the top right, dialogs are centered, and related sections are consolidated.
+- **Canvas-driven visual engine**, avoiding flat CSS strips: includes physics simulation, layered illumination, and additive blending.
+- **Preserved core features from the original**: an 88-key piano with a virtual piano layout (Roblox style), note beams, practice drills, rooms, library, sound and layers, a letter-note notepad, recording, currency, streaks, and a shop.
+
+---
+
+## 2. Prototype Features
+
+### Main Screen
+| Element | Location | Prototype Behavior |
 |---|---|---|
-| **Боковая панель** | слева | Логотип NK (открывает «О приложении»), разделы, «Ещё», профиль и настройки. Активный раздел подсвечен полоской. |
-| **Полоса «Сегодня»** | слева сверху | Ноты и минуты за сегодня и за всё время. Счётчик нот растёт, когда играешь. Клик открывает профиль. |
-| **Капсула** | справа сверху | Серия дней (окно ежедневной награды — можно «забрать»), кольцо цели дня (всплывающее окно), монеты и кристаллы (магазин), уведомления, лента чата, аватар с меню (профиль, друзья, лавка, аккаунт, выход). |
-| **Лента** | справа | Чат во вкладках «Мир», «Комната», «Личное». Сообщения отправляются по Enter, есть кнопка «перевести» и эмодзи. Сворачивается. |
-| **Подпись сцены** | по центру | Крупный текст над сценой, редактируется в настройках. |
-| **Аккорд** | над клавишами | Показывает зажатый аккорд (Am7, Cmaj7, F/A…) или интервал и список нот. |
-| **Нотный стан** | справа внизу | Рисует зажатые ноты на скрипичном и басовом ключе. |
-| **Пульт** | по центру над клавишами | Soft, Sost, Педаль и её режим (Держать / Всегда / Щелчок), транспозиция ±, метроном с бегущими долями. |
-| **Пианино** | внизу | 88 клавиш с буквами (1 ! 2 @ 3 4 $ … q Q w W …) и названиями нот. Играется мышью (ближе к краю — громче) и клавиатурой. |
+| **Sidebar** | Left | PF logo (opens "About"), navigation items, "More", profile, and settings. The active section is indicated by an accent bar. |
+| **"Today" Bar** | Top left | Notes played and minutes spent today and all-time. The note counter increments as you play. Clicking opens your profile. |
+| **Capsule** | Top right | Day streak (daily reward modal — claimable), daily goal ring (popover), coins and gems (shop), notifications, chat feed toggle, avatar menu (profile, friends, shop, account, sign out). |
+| **Feed** | Right | Chat tabs for "Global", "Room", and "Direct". Messages send on Enter; includes "translate" and emoji options. Collapsible. |
+| **Stage Title** | Center | Prominent display text above the stage, customizable in settings. |
+| **Chord Display** | Above the keys | Displays active chords (Am7, Cmaj7, F/A…) or intervals alongside the list of held notes. |
+| **Musical Staff** | Bottom right | Visualizes active notes in real-time across treble and bass clefs. |
+| **Control Bar** | Centered above keys | Soft pedal, Sostenuto, Sustain pedal and its mode (Hold / Latch / Toggle), transposition ±, and a metronome with animated beat indicators. |
+| **Piano** | Bottom | 88 keys with alphanumeric labels (1 ! 2 @ 3 4 $ … q Q w W …) and note names. Playable via mouse (velocity scales by vertical click position) and keyboard. |
 
-### Управление с клавиатуры
-| Клавиши | Действие |
+### Keyboard Shortcuts
+| Keys | Action |
 |---|---|
-| `1 2 3 … q w e … z x c …` | Играть ноты (раскладка виртуального пианино, 61 клавиша C2–C7) |
-| `Shift` + клавиша | Чёрные клавиши; если у клавиши нет пары — полутон выше |
-| `Пробел` | Педаль вкл/выкл |
-| `Tab` | Режим педали |
-| `↑ ↓` / `→ ←` | Транспозиция ±1 / ±12 |
-| `Enter` | Перейти в ленту чата |
-| `F1`–`F6`, `F8`, `F9` | Библиотека, Тренировки, Комнаты, Студия, Звук, Блокнот, Профиль, Настройки |
-| `F7` | Меню «Ещё» |
-| `Esc` | Закрыть верхнее окно |
+| `1 2 3 … q w e … z x c …` | Play notes (virtual piano layout, 61 keys C2–C7) |
+| `Shift` + key | Black keys; if a key has no sharp/flat pair, shifts up by a semitone |
+| `Space` | Sustain pedal toggle |
+| `Tab` | Switch sustain pedal mode |
+| `↑ ↓` / `→ ←` | Transpose ±1 / ±12 semitones |
+| `Enter` | Focus chat input |
+| `F1`–`F6`, `F8`, `F9` | Library, Practice, Rooms, Studio, Sound, Notepad, Profile, Settings |
+| `F7` | "More" menu |
+| `Esc` | Close topmost modal |
 
-Раздел можно открыть сразу по адресу с якорем: `index.html#settings`, `#train`, `#rooms`, `#studio`, `#echo` (сразу режим) и т.п.
+Direct navigation via URL hash is supported: `index.html#settings`, `#train`, `#rooms`, `#studio`, `#echo` (direct mode launch), etc.
 
-### Движок света (canvas)
-- **Лучи** — пять слоёв: широкий ореол, тело, ядро, белая нить. Мягкий фронт сверху, дышащая вспышка касания у клавиши, мерцание. Сила удара меняет яркость и ширину. Стили: Сияние, Нить, Столп, Дым, Нет.
-- **Искры** — веер со следом движения, гравитация, сопротивление воздуха, один отскок от горизонта.
-- **Угли** — поднимаются от лучей, закручиваются, мерцают.
-- **Ударная волна** — кольцо в перспективе по горизонту от каждой ноты.
-- **Вспышка удара** — короткий блик в точке касания.
-- **Горизонт** — светится сильнее под звучащими нотами и плавно гаснет. Режимы: Свечение, Тонкая линия, Нет.
-- **Шлейф педали** — нота, отпущенная под педалью, оставляет тающий столб.
-- **Пыль в воздухе** — частицы с глубиной (дальние мелкие, ближние размытые), около звучащих нот светятся ярче.
-- **Демо-фраза**: если 7 секунд ничего не нажимать, сцена сама играет Am7 → Fmaj7 → C → G с мелодией. Как только начинаешь играть, демо останавливается.
-- Погода поверх сцены (CSS): дождь, снег, лепестки, светлячки, зарницы.
+### Canvas Lighting Engine
+- **Beams** — five rendering passes: wide bloom, beam body, hot core, and a white core thread. Features a soft front edge, dynamic key-strike glow, and ambient shimmer. Key velocity modulates beam width and intensity. Styles: Glow, Thread, Pillar, Smoke, None.
+- **Sparks** — directional fan with motion trails, gravity simulation, air resistance, and single-bounce physics off the horizon.
+- **Embers** — upward-drifting particles rising from active beams with turbulence and flicker.
+- **Shockwave** — perspective-projected ground rings expanding along the horizon from each strike point.
+- **Impact Flash** — high-intensity instant flash at the key contact point.
+- **Horizon** — ambient glow that dynamically intensifies under active notes and decays smoothly. Modes: Bloom, Thin Line, None.
+- **Pedal Trail** — notes released while holding sustain leave an ascending, dissipating light column.
+- **Atmospheric Dust** — depth-layered particulate field (distant particles are fine, foreground particles are blurred), glowing brighter near sounding notes.
+- **Idle Demo**: after 7 seconds of inactivity, the stage automatically plays an Am7 → Fmaj7 → C → G progression with a melodic lead. Interaction immediately interrupts the demo.
+- CSS-based atmospheric overlays: rain, snow, falling petals, fireflies, and distant lightning.
 
-### Разделы
-| Раздел | Содержимое |
+### Sections
+| Section | Contents |
 |---|---|
-| **Библиотека (F1)** | Вкладки: Ноты для клавиатуры (50 000+), Ноты для пианино, Мои файлы, Мастерская, **Скан с фото** (вместо отдельного PDF). Поиск, фильтры-полки, сложность пятью делениями, избранное, кнопки «Играть», «В блокнот», «Учить», «Слушать». |
-| **Тренировки (F2)** | Фильтр категорий со счётчиками, полоса цели дня, карточка «Рекомендуем сегодня», 12 режимов с кольцом уровня и лучшим результатом. У каждого режима свой экран: шапка со счётом, полоса прогресса, выдвижные настройки. |
-| **Комнаты (F3)** | Плитки комнат (режим, голос, стопка аватаров, заполненность). «Создать» открывает окно с 6 режимами. Внутри комнаты: «Сейчас на сцене» с таймером хода и эквалайзером, очередь и зрители, кнопка «говорить». |
-| **Студия (F4)** | Одно окно с вкладками: Слушать, Учить (счёт, фрагмент A–B, темп, «ждать ноту», тепловая карта), Редактор (нотная сетка), Запись (MIDI всегда в фоне, звук, видео из файла, запись экрана, ролик за награду), Лупер (кольцо такта). |
-| **Звук (F5)** | Инструменты по категориям с мини-волной, **слои** с диапазоном клавиш и громкостью, **стойка эффектов** с ручками (Пространство, Хорус, Эхо, Эквалайзер), микшер из 8 фейдеров, задержка, вывод (WASAPI, ASIO), виртуальные MIDI-порты. |
-| **Блокнот (F6)** | Редактируемые буквенные ноты, размер шрифта, счётчики Shift и Ctrl, автоплеер, «подобрать тональность», упростить аккорды, отправить в «Набор нот» или «Скоропечать». |
-| **Ещё (F7)** | Плавающие окна, которые можно перетаскивать: квинтовый круг, камера, видео поверх, аудио → MIDI, MIDI-монитор, питч и вибрато, браузер, идеи сообщества, сообщить о проблеме. |
-| **Профиль (F8)** | Обложка, значки, вкладки: Обзор (цифры и календарь активности), Рейтинги, Клавиши (тепловая карта нажатий), Друзья. |
-| **Лавка** | Витрина украшений для ника, курсора и карточки, покупка кристаллов. |
-| **Настройки (F9)** | Большое окно с разделами и поиском по всем карточкам. |
+| **Library (F1)** | Tabs: Virtual Sheets (50,000+), Classical Piano Sheets, My Files, Community Workshop, Scan from Image (integrated PDF/OCR replacement). Search, shelf filters, 5-star difficulty ratings, favorites, and action buttons: "Play", "To Notepad", "Practice", "Listen". |
+| **Practice (F2)** | Category filters with activity counters, daily goal bar, "Recommended Today" card, and 12 training modes with mastery rings and high scores. Each mode includes a dedicated interface: score header, progress bar, and slide-out settings. |
+| **Rooms (F3)** | Room cards (game mode, voice chat status, avatar stack, capacity). "Create Room" launches a modal featuring 6 game types. Inside rooms: "On Stage" status with turn timers and audio visualizers, queue and spectator rosters, push-to-talk control. |
+| **Studio (F4)** | Unified workspace tabs: Player, Learn (scoring, A–B looping, tempo control, "wait-for-note" mode, performance heatmaps), Editor (piano roll/sheet grid), Recorder (always-on background MIDI buffer, audio render, file-based video import, screen capture, reward renders), Looper (radial bar tracker). |
+| **Sound (F5)** | Categorized instrument browser with mini-waveforms, layering engine with key-zone splits and volume trims, FX Rack with rotary controls (Reverb, Chorus, Delay, EQ), 8-channel mixer, latency adjustments, output routing (WASAPI, ASIO), and virtual MIDI ports. |
+| **Notepad (F6)** | Rich alphanumeric sheet editor, typography scaling, Shift/Ctrl modifier counters, auto-playback, key-detection, chord simplification, and one-click export to "Sheet Typing" or "Speed Typing". |
+| **More (F7)** | Draggable floating utility windows: Circle of Fifths, Camera, Video Overlay, Audio-to-MIDI, MIDI Monitor, Pitch & Vibrato, Web Browser, Community Feedback, and Bug Reporter. |
+| **Profile (F8)** | Custom banner, achievement badges, tabs: Overview (metrics and activity heatmaps), Leaderboards, Key Heatmap (frequency of played notes), Friends List. |
+| **Shop** | Cosmetic storefront for username styles, custom cursors, profile cards, and gem packages. |
+| **Settings (F9)** | Comprehensive multi-category preferences panel featuring global instant search across all settings cards. |
 
-### 12 тренировок
-| Режим | Суть |
+### 12 Practice Modes
+| Mode | Description |
 |---|---|
-| Практика песни | Ноты летят к клавишам — играть вовремя (ведёт в Студию → Учить) |
-| Набор нот | Буквенные ноты по порядку, как тренажёр печати |
-| Нотный тренажёр | Случайные ноты на стане |
-| Слух: интервалы | Назвать расстояние между двумя нотами |
-| Слух: аккорды | Определить тип аккорда |
-| Сборка аккордов | Собрать аккорд по символу |
-| Ритм-тапы | Отстучать рисунок |
-| **Эхо-мелодия** | *Новый режим, которого нет в PianoGlow:* повторить фразу, которую сыграла сцена |
-| Гаммы | Гаммы и арпеджио с аппликатурой |
-| Метеоры | Сбивать падающие метеоры нотами (клик по метеору взрывает его) |
-| Скоропечать | Слова на время, можно с пианино |
-| Поймай луч | Для двоих: один играет, второй ловит лучи |
+| Song Practice | Waterfall notes descending toward keys — play in rhythm (routes to Studio → Learn) |
+| Sheet Typing | Sequential alphanumeric note reading, functioning like a typing tutor |
+| Sight Reading | Random notes generated on the musical staff |
+| Ear Training: Intervals | Identify the interval distance between two pitches |
+| Ear Training: Chords | Identify chord qualities (major, minor, diminished, etc.) |
+| Chord Builder | Construct a chord on the keys based on a chord symbol |
+| Rhythm Taps | Tap along with displayed rhythmic patterns |
+| **Echo Melody** | *New mode not found in PianoGlow:* listen to a phrase played by the stage and replicate it |
+| Scales & Arpeggios | Practice scale patterns and arpeggios with recommended fingerings |
+| Falling Meteors | Intercept falling meteors by striking matching notes (clicking also detonates them) |
+| Speed Typing | Timed alphanumeric typing drills, compatible with musical input |
+| Catch the Beam | Two-player local co-op: Player 1 plays notes while Player 2 intercepts beams |
 
-### Что меняет картинку прямо в настройках
-- **Свет сцены** — акцентный цвет всего приложения и эффектов.
-- **Фон** (Звёзды / Туман / Пусто), пыль в воздухе.
-- **Погода**: 5 слоёв.
-- **Подпись сцены** — текст и размер.
-- **Компаньон** — зверёк, бегающий по горизонту.
-- **Лучи**: стиль, скорость, толщина.
-- **Частицы**: искры, угли, ударная волна, их количество.
-- **Шлейф педали** и его длина.
-- **Горизонт** и его яркость.
-- **Свет на клавишах**, высота клавиш.
-- **Подписи на клавишах**: авто, буквы, ноты, без подписей.
-- **Облик клавиш**: дымчатое стекло, слоновая кость, ночь, янтарь.
-- **Боковая панель**: подписи и сторона.
-- **Виджеты сцены**: аккорд, стан, «Сегодня», пульт, лента.
+### Real-Time Visual Customization in Settings
+- **Stage Glow** — master accent color applied throughout the UI, lighting passes, and particle systems.
+- **Background** (Stars / Fog / Void), atmospheric dust density.
+- **Weather Overlays**: 5 configurable visual layers.
+- **Stage Title** — custom text content and font size.
+- **Companion** — an animated mascot walking along the horizon line.
+- **Beams**: rendering style, speed, and beam width.
+- **Particles**: sparks, embers, impact shockwaves, and spawn counts.
+- **Pedal Trail** and tail decay duration.
+- **Horizon Line** and intensity.
+- **Key Lighting**, key height scaling.
+- **Key Labels**: dynamic auto, alphanumeric, note names, or disabled.
+- **Key Finishes**: smoked glass, ivory, midnight, amber.
+- **Sidebar**: label visibility and left/right screen docking.
+- **HUD Widgets**: toggle chord display, staff, "Today" tracker, control bar, and chat feed.
 
-Остальные настройки переключаются только внешне.
+Note: Functional/audio settings outside visual styling operate as interface-only mocks.
 
 ---
 
-## 3. Чем отличается от PianoGlow
+## 3. Differences from PianoGlow
 
 | PianoGlow | PianoFlows |
 |---|---|
-| Верхний ряд из 12 кнопок с F-клавишами | Боковая панель, 8 разделов, другие горячие клавиши, Esc закрывает окна |
-| Зелёный интерфейс и радужный градиент | Графит и один акцентный цвет |
-| Настройки — узкая панель с иконками справа | Большое окно с текстовыми разделами, тумблеры, пресеты |
-| Отдельные Плеер, Запись, MIDI-редактор, Лупер | Всё в «Студии» |
-| Эффекты звука в настройках | Стойка эффектов с ручками в разделе «Звук» |
-| Отдельный PDF-просмотрщик | Вкладка «Скан с фото» в библиотеке |
-| 3D-камера | Убрана |
-| Меню игр одной сеткой | Хаб тренировок с категориями, уровнями и рекомендацией; новый режим «Эхо-мелодия» |
-| Список комнат строками | Плитки комнат, создание в отдельном окне |
-| Лучи из DOM-элементов | Движок частиц на canvas |
+| Top bar with 12 function-key buttons | Unified sidebar, 8 primary sections, remapped shortcuts, Esc dismisses windows |
+| Green accents with multi-color rainbow gradients | Graphite theme anchored by a single unified accent color |
+| Narrow right-hand icon drawer for settings | Full-featured settings dashboard with searchable textual categories and presets |
+| Split standalone apps: Player, Recorder, MIDI Editor, Looper | Consolidated inside the unified "Studio" workspace |
+| Audio FX mixed into general settings | Dedicated FX Rack with rotary knobs inside the "Sound" dashboard |
+| Dedicated standalone PDF viewer | Integrated "Scan from Image" tab within the sheet music Library |
+| 3D perspective camera | Omitted in favor of an optimized 2D canvas stage |
+| Flat grid layout for mini-games | Structured Practice Hub with category filtering, mastery ranks, and "Echo Melody" |
+| Plain text-row room listings | Grid of interactive room cards with a 6-mode creation wizard |
+| DOM-element visual light beams | High-performance multi-pass 2D canvas particle engine |
 
 ---
 
-## 4. Структура проекта
+## 4. Project Structure
 
 ```
 PianoFlows_project/
-├─ dist/index.html                     ← готовый прототип (один файл, открыть в браузере)
+├─ dist/index.html                     ← Compiled standalone prototype (single file, run in browser)
 ├─ src/
-│  ├─ build.js                         ← генератор разметки (все разделы, настройки, тексты)
-│  ├─ style3.css                       ← стили
-│  ├─ app3.js                          ← поведение интерфейса и движок света
-│  └─ icons.js                         ← набор иконок
+│  ├─ build.js                         ← Markup generator (assembles views, settings, and strings)
+│  ├─ style3.css                       ← Stylesheet
+│  ├─ app3.js                          ← UI state logic and canvas lighting engine
+│  └─ icons.js                         ← SVG icon library
 ├─ archive/
-│  ├─ v0_статичный_макет.html          ← первый статичный макет
-│  └─ v1_прототип_как_оригинал.html    ← кликабельная версия, близкая к PianoGlow
+│  ├─ v0_статичный_макет.html          ← Initial static wireframe
+│  └─ v1_прототип_как_оригинал.html    ← Interactive prototype mimicking PianoGlow
 ├─ docs/
-│  ├─ PianoGlow_полный_разбор.md       ← идея и устройство PianoGlow
-│  └─ PianoGlow_каждая_кнопка.md       ← справочник по каждой настройке PianoGlow 0.50
+│  ├─ PianoGlow_полный_разбор.md       ← Functional breakdown of PianoGlow
+│  └─ PianoGlow_каждая_кнопка.md       ← Comprehensive setting-by-setting reference (PianoGlow 0.50)
 ├─ package.json
 └─ README.md
 ```
 
-### Как менять и пересобирать
-Тексты, разделы и настройки задаются в `src/build.js`, внешний вид — в `src/style3.css`, эффекты и поведение — в `src/app3.js`. После правок:
+### Build Instructions
+All UI copy, section layouts, and settings configurations are defined in `src/build.js`, styling is handled in `src/style3.css`, and visual effects/interactivity live in `src/app3.js`. To compile changes:
 
 ```bash
 npm run build
 ```
 
-(или `node src/build.js`) — пересоберёт `dist/index.html`. Нужен только Node.js, зависимостей нет.
+(or `node src/build.js`) — this recompiles `dist/index.html`. Requires only Node.js with zero third-party dependencies.
 
-Полезные места в `src/app3.js`:
-- `FX.o` — настройки движка (стиль лучей, скорость, количество частиц);
-- `noteOn` / `drawBeam` / `drawHorizon` — отрисовка;
-- `PROG` / `MEL` — демо-фраза.
+Key references in `src/app3.js`:
+- `FX.o` — engine configurations (beam styles, particle velocities, density limits);
+- `noteOn` / `drawBeam` / `drawHorizon` — rendering pipeline;
+- `PROG` / `MEL` — automated idle demo progression.
 
 ---
 
-## 5. Что дальше (если превращать в настоящее приложение)
-1. **Звук:** синтезатор SoundFont (например, SpessaSynth) вместо пустых нажатий.
-2. **Web MIDI** для настоящего пианино.
-3. **Хранение настроек** (localStorage или файл Electron).
-4. **Упаковка в Electron** — у тебя уже есть сборка PianoFlows.
-5. Затем сервер для комнат и чата.
+## 5. Next Steps (Production Roadmap)
+1. **Audio Synthesis**: Integrate a SoundFont engine (e.g., SpessaSynth) to replace silent triggers.
+2. **Web MIDI API** integration for physical digital piano input.
+3. **Configuration Storage** (via browser localStorage or an Electron configuration file).
+4. **Electron Packaging** — wrap the web build using your existing PianoFlows Electron harness.
+5. **Backend Infrastructure** to handle multiplayer rooms, WebSocket signaling, and real-time chat.
