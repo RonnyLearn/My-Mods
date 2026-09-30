@@ -1,0 +1,365 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Gargantua</title>
+<style>html,body{margin:0;height:100%;background:#000;overflow:hidden}canvas{display:block;width:100vw;height:100vh}</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+// Гаргантюа: релятивистская чёрная дыра Шварцшильда.
+// Конвейер: сцена (HDR, трассировка изогнутых лучей) -> bloom (двойной фильтр Кавасе, экспоненциальные веса)
+// -> анаморфный блик (горизонтальные проходы) -> композит (тонкое кольцо фотонов в родном разрешении, ACES, зерно).
+(() => {
+'use strict';
+const cv = document.getElementById('c');
+const opt = { antialias: false, alpha: false, depth: false, stencil: false, powerPreference: 'high-performance', preserveDrawingBuffer: false };
+let gl = cv.getContext('webgl2', opt);
+const W2 = !!gl;
+if (!gl) gl = cv.getContext('webgl', opt);
+if (!gl) { console.error('WebGL недоступен'); return; }
+
+// --- формат HDR-буферов: half float, иначе 8 бит с масштабом ---
+let deriv = W2, lod = W2, fmt = null;
+if (W2) { if (gl.getExtension('EXT_color_buffer_float')) fmt = { i: gl.RGBA16F, t: gl.HALF_FLOAT, enc: 1 }; }
+else {
+  deriv = !!gl.getExtension('OES_standard_derivatives');
+  lod = !!gl.getExtension('EXT_shader_texture_lod');
+  const h = gl.getExtension('OES_texture_half_float');
+  gl.getExtension('EXT_color_buffer_half_float');
+  if (h && gl.getExtension('OES_texture_half_float_linear')) fmt = { i: gl.RGBA, t: h.HALF_FLOAT_OES, enc: 1 };
+}
+function mkTex(w, h, f, filt, wrap, data) {
+  const t = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, t);
+  gl.texImage2D(gl.TEXTURE_2D, 0, f.i, w, h, 0, gl.RGBA, f.t, data || null);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filt || gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filt || gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, wrap || gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, wrap || gl.CLAMP_TO_EDGE);
+  return t;
+}
+function mkTarget(w, h) {
+  const tex = mkTex(w, h, fmt), fb = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  return { tex, fb, w, h, ok: gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE };
+}
+const U8 = { i: W2 ? gl.RGBA8 : gl.RGBA, t: gl.UNSIGNED_BYTE, enc: 1 / 16 };
+if (fmt) { const t = mkTarget(4, 4); if (!t.ok) fmt = null; gl.deleteFramebuffer(t.fb); gl.deleteTexture(t.tex); }
+if (!fmt) fmt = U8;
+const ENC = fmt.enc;
+
+// --- шейдеры пишутся на GLSL ES 1.0 и переводятся в 3.00 для WebGL2 ---
+function conv(src, frag) {
+  let pre = '';
+  if (frag) {
+    if (deriv) pre += W2 ? '#define HAS_DERIV\n' : '#extension GL_OES_standard_derivatives : enable\n#define HAS_DERIV\n';
+    if (!W2 && lod) pre += '#extension GL_EXT_shader_texture_lod : enable\n#define TEXL(s,u) texture2DLodEXT(s,u,0.)\n';
+    else if (W2) pre += '#define TEXL(s,u) textureLod(s,u,0.)\n';
+    else pre += '#define TEXL(s,u) texture2D(s,u)\n';
+  }
+  if (!W2) return pre + src;
+  src = src.replace(/\battribute\b/g, 'in').replace(/\bvarying\b/g, frag ? 'in' : 'out').replace(/texture2D\s*\(/g, 'texture(');
+  if (frag) src = src.replace(/gl_FragColor/g, 'oC').replace('precision highp float;', 'precision highp float;\nout vec4 oC;');
+  return '#version 300 es\n' + pre + src;
+}
+function prog(fs) {
+  const mk = (type, src) => {
+    const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
+    return s;
+  };
+  const p = gl.createProgram();
+  gl.attachShader(p, mk(gl.VERTEX_SHADER, conv('precision highp float;attribute vec2 a;void main(){gl_Position=vec4(a,0.,1.);}', false)));
+  gl.attachShader(p, mk(gl.FRAGMENT_SHADER, conv(fs, true)));
+  gl.bindAttribLocation(p, 0, 'a'); gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+  const L = {};
+  const u = (n) => (n in L ? L[n] : (L[n] = gl.getUniformLocation(p, n)));
+  return {
+    use() { gl.useProgram(p); return this; },
+    f(n, ...v) { const l = u(n); if (l) gl['uniform' + v.length + 'f'](l, ...v); return this; },
+    t(n, unit, tex) { gl.activeTexture(gl.TEXTURE0 + unit); gl.bindTexture(gl.TEXTURE_2D, tex); const l = u(n); if (l) gl.uniform1i(l, unit); return this; },
+  };
+}
+
+// ============================ СЦЕНА ============================
+const SCENE = `precision highp float;
+uniform vec2 uRes;uniform float uTime,uK,uRing,uEnc;
+uniform vec3 uRo,uF,uR,uU;
+uniform sampler2D uNoise;
+const float PI=3.14159265,RIN=2.45,ROUT=10.5;
+
+// 3D value noise из 2D-текстуры (канал G = R со сдвигом (37,17)) — одна выборка на октаву
+float n3(vec3 x){vec3 p=floor(x),f=fract(x);f=f*f*(3.-2.*f);
+  vec2 uv=(p.xy+vec2(37.,17.)*p.z)+f.xy;vec2 rg=TEXL(uNoise,(uv+.5)/256.).rg;return mix(rg.x,rg.y,f.z);}
+vec4 h43(vec3 p){vec4 q=fract(vec4(p.xyzx)*vec4(.1031,.103,.0973,.1099));q+=dot(q,q.wzxy+33.33);return fract((q.xxyz+q.yzzw)*q.zywx);}
+
+// ---- аккреционный диск: волокнистые потоки плазмы ----
+// шум берётся на цилиндре (r, cos φ, sin φ) — бесшовно по φ, вытянут вдоль орбиты
+float streams(float rr,float y,float ph,out float fib){
+  vec3 q=vec3(rr*7.5+y*4.,cos(ph)*3.,sin(ph)*3.);
+  float s=0.,a=.5;
+  for(int i=0;i<4;i++){s+=a*n3(q);q=q*vec3(2.07,2.,2.)+vec3(1.7,9.2,3.1);a*=.5;}
+  float f=1.-abs(2.*n3(vec3(rr*31.+y*9.,cos(ph)*11.,sin(ph)*11.))-1.);
+  fib=f*f*f*f*f*f;
+  return s*1.0667;
+}
+// палитра температуры: #8a2500 -> #ffa726 -> #fff9e6 -> белый (линейный цвет)
+vec3 pal(float x){
+  vec3 c1=vec3(.2582,.0185,0.),c2=vec3(1.,.3864,.0194),c3=vec3(1.,.9473,.7913);
+  if(x<.35)return c1*smoothstep(0.,.35,x);
+  if(x<.75)return mix(c1,c2,(x-.35)/.4);
+  if(x<1.15)return mix(c2,c3,(x-.75)/.4);
+  return mix(c3,vec3(1.),clamp((x-1.15)/.5,0.,1.));
+}
+
+// ---- фон: туманность и звёзды (по направлению после отклонения) ----
+float fbm3(vec3 p){float s=0.,a=.5;for(int i=0;i<5;i++){s+=a*n3(p);p=p*2.02+vec3(3.1,7.7,1.3);a*=.5;}return s*1.032;}
+vec3 nebula(vec3 d){
+  vec3 w=vec3(fbm3(d*1.7),fbm3(d*1.7+4.3),fbm3(d*1.7+9.1));
+  float n=fbm3(d*2.4+w*1.3),m=fbm3(d*6.+w*2.);
+  float cl=smoothstep(.42,.9,n),dust=smoothstep(.5,.8,m)*cl;
+  vec3 c=mix(vec3(.004,.006,.013),vec3(.022,.028,.055),cl);
+  c+=vec3(.05,.022,.012)*pow(cl,3.)*m;                  // тёплые облака
+  c+=vec3(.012,.03,.05)*smoothstep(.62,.95,fbm3(d*3.3-w))*(1.-cl*.5); // холодная дымка
+  return c*(1.-dust*.6);
+}
+// субпиксельные звёзды: 8 ближайших ячеек 3D-решётки, звезда лежит в тонком слое сферы.
+// Смещение звезды переводится в пиксели через якобиан линзы (dFdx/dFdy направления), поэтому
+// звезда остаётся точкой ~1px даже там, где линза растягивает небо в дуги; яркость растёт с усилением.
+vec3 gJx,gJy;float gG11,gG12,gG22,gDet,gMu;
+vec3 starLayer(vec3 d,float K,float prob,float fw,float seed,float gain){
+  vec3 x=d*K,c0=floor(x),o=step(.5,x-c0)*2.-1.;
+  vec3 acc=vec3(0.);
+  for(int i=0;i<8;i++){
+    vec3 c=c0+vec3(mod(float(i),2.),mod(floor(float(i)*.5),2.),floor(float(i)*.25))*o;
+    vec4 h=h43(c+seed);
+    if(h.w>prob)continue;
+    vec3 sp=c+h.xyz;float L=length(sp);
+    if(abs(L-K)>.33)continue;
+    vec3 dv=sp/L-d;
+    vec2 r=vec2(dot(dv,gJx),dot(dv,gJy)),op=vec2(gG22*r.x-gG12*r.y,gG11*r.y-gG12*r.x)/gDet;
+    float u=h.w/prob,F=gain*.018/(u*u+.012)*gMu;
+    vec3 col=mix(vec3(.75,.84,1.),vec3(1.,.8,.62),fract(u*37.1));
+    acc+=col*F*exp(-.5*dot(op,op)/.5)*.3;
+  }
+  return acc;
+}
+vec3 sky(vec3 d,vec3 jx,vec3 jy){
+  vec3 c=nebula(d);
+  gJx=jx;gJy=jy;gG11=dot(jx,jx);gG12=dot(jx,jy);gG22=dot(jy,jy);gDet=max(gG11*gG22-gG12*gG12,1e-24);
+  float px=.25/1080.;                                  // эталонный размер пикселя (рад)
+  float det=sqrt(gDet);gMu=clamp(sqrt(px*px/det),.3,4.); // усиление точечного источника (смягчено)
+  float fade=1.-smoothstep(.006,.04,sqrt(max(gG11,gG22)));   // у самого горизонта звёзды растворяются
+  if(fade>0.)c+=(starLayer(d,45.,.45,0.,1.,2.6)+starLayer(d,120.,.35,0.,7.,1.)+starLayer(d,300.,.3,0.,13.,.45))*fade;
+  return c;
+}
+
+void main(){
+  vec2 uv=(gl_FragCoord.xy-.5*uRes)/uRes.y;
+  vec3 rd=normalize(uF+(uv.x*uR+uv.y*uU)*uK);
+  vec3 p=uRo,v=rd;
+  vec3 hv=cross(p,v);float h2=dot(hv,hv);               // квадрат прицельного параметра (сохраняется)
+  vec3 col=vec3(0.);float T=1.,cap=0.;
+  vec3 acc=-1.5*h2*p/pow(dot(p,p),2.5);
+  for(int i=0;i<300;i++){
+    float r2=dot(p,p),r=sqrt(r2);
+    if(r<1.){cap=1.;break;}                              // под горизонтом событий
+    if(r>60.&&dot(p,v)>0.)break;                         // ушёл на бесконечность
+    float dt=.05*r;
+    float rr=length(p.xz),H=.028+.017*rr;
+    if(rr>RIN*.8&&rr<ROUT*1.1){
+      float dy=abs(p.y)-2.6*H;
+      dt=min(dt,max(dy/(abs(v.y)+1e-4)*.9,.05+.011*rr));   // не перепрыгнуть слой диска
+      if(dy<0.){
+        float dl=dt*length(v);
+        float ph=atan(p.z,p.x)+1.35*pow(rr,-1.5)*uTime*1.6; // дифференциальное вращение
+        float fib,n=streams(rr,p.y,ph,fib);
+        float vert=exp(-p.y*p.y/(H*H));
+        float rad=smoothstep(RIN,RIN+.7,rr)*(1.-smoothstep(ROUT*.4,ROUT,rr));
+        float rho=vert*rad*(.06+1.5*pow(smoothstep(.36,.8,n),3.)+1.1*fib);
+        if(rho>.002){
+          // допплер: скорость орбиты (приближающаяся сторона — слева), гравитационное красное смещение
+          float beta=min(sqrt(.5/(rr-1.)),.62);
+          vec3 vel=normalize(vec3(p.z,0.,-p.x))*beta;
+          float dop=sqrt(1.-beta*beta)/(1.+dot(vel,normalize(v)));
+          float g=dop*sqrt(max(1.-1./rr,.01));
+          float tc=pow(RIN/rr,.5)*g*g;
+          float I=1.25*pow(RIN/rr,2.5)*pow(g,1.6)*(.45+.9*n+1.4*fib);
+          float k=rho*13.;
+          float a=1.-exp(-k*dl);
+          col+=T*a*pal(tc)*I;
+          T*=1.-a;
+          if(T<.004)break;
+        }
+      }
+    }
+    // уравнение орбиты фотона в Шварцшильде (rs=1), интегратор Верле 2-го порядка:
+    // ошибка отклонения мала, поэтому соседние лучи не «прыгают» и звёзды не размазываются в дуги
+    p+=v*dt+.5*acc*dt*dt;
+    vec3 a1=-1.5*h2*p/pow(dot(p,p),2.5);
+    v+=.5*(acc+a1)*dt;acc=a1;
+  }
+  vec3 dir=normalize(v);
+  vec3 jx=vec3(2e-4,0.,0.),jy=vec3(0.,2e-4,0.);
+#ifdef HAS_DERIV
+  jx=dFdx(dir);jy=dFdy(dir);
+#endif
+  if(cap<.5)col+=T*sky(dir,jx,jy);
+  // мягкое кольцо для bloom (чёткое 1px кольцо рисует композит в родном разрешении)
+  float px=1./uRes.y,dr=length(uv)-uRing-.5*px;
+  col+=vec3(1.,.96,.9)*exp(-dr*dr/(px*px*2.2))*2.5*T*T;
+  gl_FragColor=vec4(col*uEnc,T);
+}`;
+
+// ============================ BLOOM / БЛИК ============================
+const DOWN = `precision highp float;
+uniform sampler2D uT;uniform vec2 uSrc,uDst;uniform float uThr,uFirst;
+vec3 S(vec2 u){vec3 c=texture2D(uT,u).rgb;
+  if(uFirst>.5){float b=max(c.r,max(c.g,c.b));c*=max(b-uThr,0.)/max(b,1e-4);c=min(c,vec3(uThr*60.));}return c;}
+void main(){vec2 uv=gl_FragCoord.xy/uDst,hp=.5/uSrc;
+  vec3 s=S(uv)*4.+S(uv-hp)+S(uv+hp)+S(uv+vec2(hp.x,-hp.y))+S(uv-vec2(hp.x,-hp.y));
+  gl_FragColor=vec4(s/8.,1.);}`;
+const UP = `precision highp float;
+uniform sampler2D uT,uC;uniform vec2 uSrc,uDst;uniform float uDecay;
+vec3 S(vec2 u){return texture2D(uT,u).rgb;}
+void main(){vec2 uv=gl_FragCoord.xy/uDst,hp=.5/uSrc;
+  vec3 s=S(uv+vec2(-hp.x*2.,0.))+S(uv+vec2(-hp.x,hp.y))*2.+S(uv+vec2(0.,hp.y*2.))+S(uv+hp)*2.
+        +S(uv+vec2(hp.x*2.,0.))+S(uv+vec2(hp.x,-hp.y))*2.+S(uv+vec2(0.,-hp.y*2.))+S(uv-hp)*2.;
+  gl_FragColor=vec4(s/12.*uDecay+texture2D(uC,uv).rgb,1.);}`;
+// горизонтальный экспоненциальный размыв (анаморфный блик)
+const HBLUR = `precision highp float;
+uniform sampler2D uT;uniform vec2 uSrc;uniform float uStep;
+void main(){vec2 uv=gl_FragCoord.xy/uSrc;vec3 s=vec3(0.);float w=0.;
+  for(int i=-8;i<=8;i++){float k=exp(-abs(float(i))*.35);s+=texture2D(uT,uv+vec2(float(i)*uStep/uSrc.x,0.)).rgb*k;w+=k;}
+  gl_FragColor=vec4(s/w,1.);}`;
+
+// ============================ КОМПОЗИТ ============================
+const COMP = `precision highp float;
+uniform sampler2D uS,uB,uF;uniform vec2 uRes;uniform float uRing,uDec,uTime;
+vec3 aces(vec3 x){return clamp((x*(2.51*x+.03))/(x*(2.43*x+.59)+.14),0.,1.);}
+float h12(vec2 p){vec3 q=fract(vec3(p.xyx)*.1031);q+=dot(q,q.yzx+33.33);return fract((q.x+q.y)*q.z);}
+void main(){
+  vec2 st=gl_FragCoord.xy/uRes,uv=(gl_FragCoord.xy-.5*uRes)/uRes.y;
+  vec4 s=texture2D(uS,st);
+  vec3 c=s.rgb*uDec;
+  c+=texture2D(uB,st).rgb*uDec*.1;                    // экспоненциальный bloom
+  vec3 fl=texture2D(uF,st).rgb*uDec;
+  c+=fl*vec3(.75,.85,1.15)*.22*exp(-uv.y*uv.y*6.);     // анаморфная полоса вдоль экватора
+  // кольцо захвата фотонов: 1 пиксель, ослепительно белое, закрывается передним краем диска
+  float px=1./uRes.y,d=length(uv)-uRing-.5*px;
+  c+=vec3(1.,.985,.96)*exp(-d*d/(px*px*.36))*22.*smoothstep(.15,.85,s.a);
+  c=aces(c*1.05);
+  c*=1.-.28*smoothstep(.45,1.25,length(uv*vec2(.85,1.)));   // виньетка
+  float g=h12(gl_FragCoord.xy+fract(uTime*7.13)*97.)-.5;
+  c+=g*.022*(1.-c)*sqrt(c+.02);                         // плёночное зерно
+  c=pow(c,vec3(1./2.2));
+  c+=(h12(gl_FragCoord.yx+uTime)-.5)/255.;              // дизеринг против полос
+  gl_FragColor=vec4(c,1.);}`;
+
+let P;
+try { P = { scene: prog(SCENE), down: prog(DOWN), up: prog(UP), hb: prog(HBLUR), comp: prog(COMP) }; }
+catch (e) { console.error(e); return; }
+
+// полноэкранный треугольник
+const vb = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, vb);
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+const draw = (t) => { gl.bindFramebuffer(gl.FRAMEBUFFER, t ? t.fb : null); gl.viewport(0, 0, t ? t.w : cv.width, t ? t.h : cv.height); gl.drawArrays(gl.TRIANGLES, 0, 3); };
+
+// текстура шума 256x256: R — случайные значения, G — R со сдвигом (37,17)
+const nd = new Uint8Array(256 * 256 * 4), rnd = new Uint8Array(256 * 256);
+let seed = 1337; for (let i = 0; i < rnd.length; i++) { seed = (seed * 1664525 + 1013904223) >>> 0; rnd[i] = seed >>> 24; }
+for (let y = 0; y < 256; y++) for (let x = 0; x < 256; x++) {
+  const o = (y * 256 + x) * 4; nd[o] = rnd[y * 256 + x]; nd[o + 1] = rnd[((y + 17) & 255) * 256 + ((x + 37) & 255)]; nd[o + 3] = 255;
+}
+const noise = mkTex(256, 256, { i: W2 ? gl.RGBA8 : gl.RGBA, t: gl.UNSIGNED_BYTE }, gl.LINEAR, gl.REPEAT, nd);
+
+// --- цели рендера ---
+let S = null, mips = [], ups = [], FA = null, FB = null;
+function free(t) { if (t) { gl.deleteTexture(t.tex); gl.deleteFramebuffer(t.fb); } }
+function alloc(sw, sh) {
+  [S, FA, FB, ...mips, ...ups].forEach(free);
+  S = mkTarget(sw, sh); mips = []; ups = [];
+  let w = sw, h = sh;
+  for (let i = 0; i < 7 && Math.min(w, h) > 8; i++) { w = Math.max(1, w >> 1); h = Math.max(1, h >> 1); mips.push(mkTarget(w, h)); }
+  for (let i = 0; i < mips.length - 1; i++) ups.push(mkTarget(mips[i].w, mips[i].h));
+  const m = mips[Math.min(1, mips.length - 1)];
+  FA = mkTarget(m.w, m.h); FB = mkTarget(m.w, m.h);
+}
+
+// --- адаптивное разрешение сцены ради 60 FPS ---
+const q = new URLSearchParams(location.search);
+const fixed = q.has('scale') ? +q.get('scale') : 0;
+let scale = fixed || 0.75, hist = [], hold = 0;
+function adapt(dt) {
+  if (fixed) return;
+  hist.push(dt); if (hist.length < 30) return;
+  hist.sort((a, b) => a - b); const med = hist[15]; hist = [];
+  if (med > 18.5) { scale = Math.max(0.35, scale * 0.88); hold = 4; }
+  else if (med < 17.4 && hold-- <= 0) scale = Math.min(1, scale * 1.05);
+}
+
+let cw = 0, ch = 0, sw = 0, sh = 0;
+function resize() {
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const w = Math.max(1, Math.round(innerWidth * dpr)), h = Math.max(1, Math.round(innerHeight * dpr));
+  if (w !== cw || h !== ch) { cw = cv.width = w; ch = cv.height = h; }
+  const nw = Math.max(64, Math.round(cw * scale)), nh = Math.max(36, Math.round(ch * scale));
+  if (!S || Math.abs(nw - sw) > sw * 0.04 || Math.abs(nh - sh) > sh * 0.04 || (nw === cw) !== (sw === cw)) { sw = nw; sh = nh; alloc(sw, sh); }
+}
+
+// --- камера: далеко (D=28 rs), чуть выше плоскости диска; радиус тени = uRing ---
+const D = 28, RING = 0.28, BC = 1.5 * Math.sqrt(3);            // критический прицельный параметр 3√3/2 rs
+const K = Math.tan(Math.asin(BC / D)) / RING;                   // масштаб экрана: край тени ровно на R=0.28
+
+function render(t) {
+  const inc = (5.2 + 0.9 * Math.sin(t * 0.043)) * Math.PI / 180, yaw = 0.05 * Math.sin(t * 0.031);
+  const ro = [D * Math.cos(inc) * Math.sin(yaw), D * Math.sin(inc), D * Math.cos(inc) * Math.cos(yaw)];
+  const f = ro.map((x) => -x / D);
+  // right = normalize(cross(f, y)), up = cross(right, f)
+  const n = Math.hypot(f[2], f[0]), r = [-f[2] / n, 0, f[0] / n];
+  const u = [r[1] * f[2] - r[2] * f[1], r[2] * f[0] - r[0] * f[2], r[0] * f[1] - r[1] * f[0]];
+
+  P.scene.use().t('uNoise', 0, noise).f('uRes', sw, sh).f('uTime', t).f('uK', K).f('uRing', RING).f('uEnc', ENC)
+    .f('uRo', ...ro).f('uF', ...f).f('uR', ...r).f('uU', ...u);
+  draw(S);
+
+  // bloom: вниз по цепочке с порогом на первом шаге, затем вверх с затуханием (экспоненциальный профиль)
+  let src = S;
+  mips.forEach((m, i) => { P.down.use().t('uT', 0, src.tex).f('uSrc', src.w, src.h).f('uDst', m.w, m.h).f('uThr', 1.2 * ENC).f('uFirst', i ? 0 : 1); draw(m); src = m; });
+  let prev = mips[mips.length - 1];
+  for (let i = ups.length - 1; i >= 0; i--) {
+    P.up.use().t('uT', 0, prev.tex).t('uC', 1, mips[i].tex).f('uSrc', prev.w, prev.h).f('uDst', ups[i].w, ups[i].h).f('uDecay', 0.72);
+    draw(ups[i]); prev = ups[i];
+  }
+  // анаморфный блик: три горизонтальных прохода с растущим шагом
+  const m1 = mips[Math.min(1, mips.length - 1)];
+  P.hb.use().t('uT', 0, m1.tex).f('uSrc', FA.w, FA.h).f('uStep', 1); draw(FA);
+  P.hb.use().t('uT', 0, FA.tex).f('uSrc', FA.w, FA.h).f('uStep', 5); draw(FB);
+  P.hb.use().t('uT', 0, FB.tex).f('uSrc', FA.w, FA.h).f('uStep', 22); draw(FA);
+
+  P.comp.use().t('uS', 0, S.tex).t('uB', 1, (ups[0] || mips[0]).tex).t('uF', 2, FA.tex)
+    .f('uRes', cw, ch).f('uRing', RING).f('uDec', 1 / ENC).f('uTime', t % 100);
+  draw(null);
+}
+
+const t0 = performance.now(); let last = t0;
+// ?still=<сек> — один кадр без анимации (для превью и проверки)
+if (q.has('still')) { resize(); render(+q.get('still') || 0); gl.finish(); return; }
+function frame(now) {
+  requestAnimationFrame(frame);
+  adapt(now - last); last = now;
+  resize();
+  render((now - t0) / 1000);
+}
+requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
