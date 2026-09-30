@@ -1,0 +1,399 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Magnetar</title>
+<style>html,body{margin:0;height:100%;background:#000;overflow:hidden}canvas{display:block;width:100vw;height:100vh}</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+// Магнетар: нейтронная звезда со сверхсильным полем, вид из открытого космоса.
+// Всё тонкое считается аналитически (без шагов по объёму): силовые линии диполя — через пересечение луча с
+// меридиональными плоскостями, джеты — через ближайшую точку луча к оси, плазмоиды — гауссовы облака.
+// Конвейер: сцена (HDR) -> bloom (двойной фильтр Кавасе) -> композит (хроматическая аберрация, ACES, зерно).
+(() => {
+'use strict';
+const cv = document.getElementById('c');
+const opt = { antialias: false, alpha: false, depth: false, stencil: false, powerPreference: 'high-performance', preserveDrawingBuffer: false };
+let gl = cv.getContext('webgl2', opt);
+const W2 = !!gl;
+if (!gl) gl = cv.getContext('webgl', opt);
+if (!gl) { console.error('WebGL недоступен'); return; }
+
+// --- формат HDR-буферов: half float, иначе 8 бит с масштабом ---
+let deriv = W2, lod = W2, fmt = null;
+if (W2) { if (gl.getExtension('EXT_color_buffer_float')) fmt = { i: gl.RGBA16F, t: gl.HALF_FLOAT, enc: 1 }; }
+else {
+  deriv = !!gl.getExtension('OES_standard_derivatives');
+  lod = !!gl.getExtension('EXT_shader_texture_lod');
+  const h = gl.getExtension('OES_texture_half_float');
+  gl.getExtension('EXT_color_buffer_half_float');
+  if (h && gl.getExtension('OES_texture_half_float_linear')) fmt = { i: gl.RGBA, t: h.HALF_FLOAT_OES, enc: 1 };
+}
+function mkTex(w, h, f, filt, wrap, data) {
+  const t = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, t);
+  gl.texImage2D(gl.TEXTURE_2D, 0, f.i, w, h, 0, gl.RGBA, f.t, data || null);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filt || gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filt || gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, wrap || gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, wrap || gl.CLAMP_TO_EDGE);
+  return t;
+}
+function mkTarget(w, h) {
+  const tex = mkTex(w, h, fmt), fb = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  return { tex, fb, w, h, ok: gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE };
+}
+const U8 = { i: W2 ? gl.RGBA8 : gl.RGBA, t: gl.UNSIGNED_BYTE, enc: 1 / 16 };
+if (fmt) { const t = mkTarget(4, 4); if (!t.ok) fmt = null; gl.deleteFramebuffer(t.fb); gl.deleteTexture(t.tex); }
+if (!fmt) fmt = U8;
+const ENC = fmt.enc;
+
+// --- шейдеры пишутся на GLSL ES 1.0 и переводятся в 3.00 для WebGL2 ---
+function conv(src, frag) {
+  let pre = '';
+  if (frag) {
+    if (deriv) pre += W2 ? '#define HAS_DERIV\n' : '#extension GL_OES_standard_derivatives : enable\n#define HAS_DERIV\n';
+    if (!W2 && lod) pre += '#extension GL_EXT_shader_texture_lod : enable\n#define TEXL(s,u) texture2DLodEXT(s,u,0.)\n';
+    else if (W2) pre += '#define TEXL(s,u) textureLod(s,u,0.)\n';
+    else pre += '#define TEXL(s,u) texture2D(s,u)\n';
+  }
+  if (!W2) return pre + src;
+  src = src.replace(/\battribute\b/g, 'in').replace(/\bvarying\b/g, frag ? 'in' : 'out').replace(/texture2D\s*\(/g, 'texture(');
+  if (frag) src = src.replace(/gl_FragColor/g, 'oC').replace('precision highp float;', 'precision highp float;\nout vec4 oC;');
+  return '#version 300 es\n' + pre + src;
+}
+function prog(fs) {
+  const mk = (type, src) => {
+    const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
+    return s;
+  };
+  const p = gl.createProgram();
+  gl.attachShader(p, mk(gl.VERTEX_SHADER, conv('precision highp float;attribute vec2 a;void main(){gl_Position=vec4(a,0.,1.);}', false)));
+  gl.attachShader(p, mk(gl.FRAGMENT_SHADER, conv(fs, true)));
+  gl.bindAttribLocation(p, 0, 'a'); gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+  const L = {};
+  const u = (n) => (n in L ? L[n] : (L[n] = gl.getUniformLocation(p, n)));
+  return {
+    use() { gl.useProgram(p); return this; },
+    f(n, ...v) { const l = u(n); if (l) gl['uniform' + v.length + 'f'](l, ...v); return this; },
+    v4(n, v) { const l = u(n); if (l) gl.uniform4fv(l, v); return this; },
+    t(n, unit, tex) { gl.activeTexture(gl.TEXTURE0 + unit); gl.bindTexture(gl.TEXTURE_2D, tex); const l = u(n); if (l) gl.uniform1i(l, unit); return this; },
+  };
+}
+
+// ============================ СЦЕНА ============================
+const SCENE = `precision highp float;
+uniform vec2 uRes;uniform float uTime,uTan,uEnc;
+uniform vec3 uRo,uF,uR,uU,uMx,uMy,uMz;
+uniform vec4 uFl[3];                 // вспышки: (плоскость, сторона, L, фаза)
+uniform sampler2D uNoise;
+const float PI=3.14159265,NPL=6.,RSG=.42;   // RSG — гравитационный радиус (компактность нейтронной звезды)
+
+float n3(vec3 x){vec3 p=floor(x),f=fract(x);f=f*f*(3.-2.*f);
+  vec2 uv=(p.xy+vec2(37.,17.)*p.z)+f.xy;vec2 rg=TEXL(uNoise,(uv+.5)/256.).rg;return mix(rg.x,rg.y,f.z);}
+float fbm(vec3 p){float s=0.,a=.5;for(int i=0;i<5;i++){s+=a*n3(p);p=p*2.03+vec3(3.1,7.7,1.3);a*=.5;}return s*1.032;}
+vec4 h43(vec3 p){vec4 q=fract(vec4(p.xyzx)*vec4(.1031,.103,.0973,.1099));q+=dot(q,q.wzxy+33.33);return fract((q.xxyz+q.yzzw)*q.zywx);}
+float h11(float p){p=fract(p*.1031);p*=p+33.33;p*=p+p;return fract(p);}
+vec3 toM(vec3 p){return vec3(dot(p,uMx),dot(p,uMy),dot(p,uMz));}   // в магнитную (вращающуюся) систему
+vec3 fromM(vec3 p){return p.x*uMx+p.y*uMy+p.z*uMz;}
+
+// ---------------- фон: реалистичное звёздное небо с Млечным Путём ----------------
+vec3 starLayer(vec3 d,float K,float prob,float pa,float seed,float gain){
+  vec3 x=d*K,c0=floor(x),o=step(.5,x-c0)*2.-1.;
+  float sg=pa*.75;vec3 acc=vec3(0.);
+  for(int i=0;i<8;i++){
+    vec3 c=c0+vec3(mod(float(i),2.),mod(floor(float(i)*.5),2.),floor(float(i)*.25))*o;
+    vec4 h=h43(c+seed);
+    if(h.w>prob)continue;
+    vec3 sp=c+h.xyz;float L=length(sp);
+    if(abs(L-K)>.33)continue;
+    float dd=length(sp/L-d),u=h.w/prob,F=gain*.02/(u*u+.015);
+    vec3 col=mix(vec3(.78,.86,1.),vec3(1.,.83,.66),smoothstep(.3,.9,fract(u*37.1)));
+    acc+=col*F*exp(-.5*dd*dd/(sg*sg))*.2;
+  }
+  return acc;
+}
+vec3 sky(vec3 d,float pa){
+  vec3 g=normalize(vec3(.8,.45,-.55)),gx=normalize(cross(g,vec3(0.,0.,1.))),gy=cross(g,gx);
+  float b=asin(clamp(dot(d,g),-1.,1.)),l=atan(dot(d,gy),dot(d,gx));
+  vec3 w=vec3(fbm(d*2.1),fbm(d*2.1+5.2),0.);
+  float band=exp(-b*b/(.02+.02*w.x))*pow(fbm(d*3.3+w*1.2),1.8)*2.;
+  float bulge=exp(-(l-2.4)*(l-2.4)/.5-b*b/.06);
+  float dust=smoothstep(.45,.85,1.-abs(fbm(d*5.5+w*1.8)*2.-1.))*exp(-(b-.02)*(b-.02)/.006);
+  float fine=fbm(d*22.);
+  vec3 mw=(vec3(.78,.74,.68)*band+vec3(1.,.8,.56)*bulge*1.4)*(.45+1.1*fine*fine);
+  mw*=1.-.92*dust*(.55+.45*fine);
+  mw+=vec3(.35,.18,.08)*dust*band*.15;                  // бурые пылевые прожилки
+  vec3 c=mw*.06+vec3(.0015,.002,.0032)*(.6+.8*fbm(d*1.3));
+  float dens=.25+1.4*band+2.*bulge;
+  c+=starLayer(d,40.,.45,pa,1.,2.4)+starLayer(d,110.,min(.95,.3*dens),pa,7.,1.)
+    +starLayer(d,280.,min(.95,.25*dens),pa,13.,.45)+starLayer(d,600.,min(.95,.22*dens),pa,19.,.22);
+  return c;
+}
+
+// ---------------- поверхность: конвективные ячейки плазмы ----------------
+vec2 worley(vec3 p,float t){
+  vec3 i=floor(p),f=fract(p);float d1=9.,d2=9.;
+  for(int z=-1;z<=1;z++)for(int y=-1;y<=1;y++)for(int x=-1;x<=1;x++){
+    vec3 c=vec3(x,y,z),h=h43(i+c).xyz;
+    h=.5+.38*sin(t*.35+6.2832*h);                       // ячейки медленно перестраиваются
+    float d=length(c+h-f);
+    if(d<d1){d2=d1;d1=d;}else if(d<d2)d2=d;
+  }
+  return vec2(d1,d2);
+}
+vec3 surface(vec3 n,vec3 rd){
+  vec3 q=toM(n);
+  vec2 w=worley(q*5.5,uTime),w2=worley(q*13.+3.,uTime*1.7);
+  float cell=smoothstep(0.,.55,w.y-w.x),gran=smoothstep(0.,.4,w2.y-w2.x);
+  float tb=fbm(q*9.+vec3(0.,0.,uTime*.2));
+  float mu=max(dot(n,-rd),0.);
+  float I=(.62+.38*cell)*(.82+.18*gran)*(.75+.4*tb);
+  float cap=smoothstep(.9,.985,abs(q.z));               // горячие полярные шапки
+  vec3 hot=vec3(1.,1.,1.),cool=vec3(.45,.82,1.);
+  vec3 c=mix(cool,hot,clamp(I*1.1-.25+cap,0.,1.))*I*(2.6+9.*cap);
+  c*=.35+.65*pow(mu,.45);                               // потемнение к краю
+  c+=vec3(.3,.7,1.)*pow(1.-mu,3.)*2.;                    // горячая голубая кайма
+  return c;
+}
+
+// ---------------- силовые линии диполя r = L sin²θ, аналитически через пересечение меридиональных плоскостей ----------------
+float gPa,gTS;
+vec3 fieldLines(vec3 om,vec3 dm){
+  vec3 acc=vec3(0.);
+  for(int j=0;j<6;j++){
+    float ph=float(j)*PI/NPL+.13;
+    vec3 nr=vec3(-sin(ph),cos(ph),0.),ax=vec3(cos(ph),sin(ph),0.);
+    float dn=dot(dm,nr);
+    if(abs(dn)<1e-4)continue;
+    float t=-dot(om,nr)/dn;
+    if(t<0.||t>gTS)continue;
+    vec3 P=om+dm*t;float rho=dot(P,ax),r=length(P);
+    if(r<1.02||r>9.)continue;
+    float st=abs(rho)/r,ct=P.z/r,side=rho<0.?1.:0.,id=float(j)+side*NPL;
+    float inc=1./max(abs(dn),.22);
+    float wpx=gPa*t;                                    // размер пикселя на этой глубине
+    for(int k=0;k<4;k++){
+      float L=1.55*pow(1.42,float(k)+.35*h11(id*5.+float(k)));
+      float dr=abs(r-L*st*st)/sqrt(1.+4.*ct*ct/max(st*st,1e-3));
+      float w0=.009*sqrt(r),w=max(w0,wpx*.8);
+      float core=exp(-dr*dr/(w*w))*w0/w;                // тоньше пикселя — шире, но тусклее (без мерцания)
+      float halo=exp(-dr/(w*5.))*.02;
+      if(core+halo<1e-4)continue;
+      float hs=h11(id*13.+float(k)*7.);
+      float th=atan(st,ct);
+      // бегущие электрические импульсы вдоль линии
+      float pulse=pow(.5+.5*sin(th*16.-uTime*(5.+4.*hs)+hs*40.),10.)*1.6+.35+.25*sin(uTime*1.7+hs*20.);
+      float fl=1.;
+      for(int m=0;m<3;m++){vec4 F=uFl[m];
+        if(abs(F.x-float(j))<.5&&abs(F.y-side)<.5&&abs(F.z-float(k))<.5)
+          fl+=22.*smoothstep(0.,.05,F.w)*exp(-F.w*4.)*(.4+.6*exp(-(th-PI*.5)*(th-PI*.5)*3.));}
+      float I=(core+halo)*pulse*fl*inc*(.7+.6*hs)/pow(L,.6);
+      acc+=vec3(.42,.62,1.)*I*.32;
+    }
+  }
+  return acc;
+}
+
+// ---------------- релятивистские джеты вдоль магнитной оси, аналитически ----------------
+vec3 jets(vec3 ro,vec3 rd,float tS){
+  vec3 m=uMz;float b=dot(rd,m),e=dot(m,ro),dd=dot(rd,ro),den=max(1.-b*b,1e-4);
+  float tr=(b*e-dd)/den,z=(e-b*dd)/den;
+  if(tr<0.||tr>tS)return vec3(0.);
+  float az=abs(z);if(az<1.)return vec3(0.);
+  float dist=length(ro+rd*tr-m*z),s=az-1.;
+  float k=pow(.5+.5*cos(6.2832*s/(1.1+.12*s)),6.);      // ударные «алмазы»
+  float w=(.035+.04*s)*(.65+.55*(1.-k));
+  float flow=n3(vec3(s*1.3-uTime*11.,dist*9./w,z>0.?0.:7.)); // быстрые потоки, смаз движения
+  float E=exp(-s/9.)*smoothstep(0.,.25,s)*(.35+1.4*k+.6*flow);
+  float sg=sqrt(den);
+  float I=E*exp(-dist*dist/(w*w))*w*1.77/max(sg,.12)*2.2;
+  float sheath=E*exp(-dist/(w*3.))*.06/max(sg,.12);
+  return vec3(.75,.88,1.)*I+vec3(.35,.45,1.)*sheath;
+}
+
+// ---------------- выброс корональной массы: плазмоид уходит от вершины дуги ----------------
+vec3 plasmoids(vec3 ro,vec3 rd,float tS){
+  vec3 acc=vec3(0.);
+  for(int m=0;m<3;m++){vec4 F=uFl[m];
+    float ph=F.x*PI/NPL+.13+F.y*PI,L=1.55*pow(1.42,F.z+.35*h11((F.x+F.y*NPL)*5.+F.z));
+    float tau=F.w;
+    vec3 c=fromM(vec3(cos(ph),sin(ph),0.)*L*(1.+3.5*pow(tau,.7)));
+    float t=dot(c-ro,rd);if(t<0.||t>tS)continue;
+    float d=length(ro+rd*t-c),sg=.12+.9*tau;
+    float n=n3((ro+rd*t-c)/sg*2.5+float(m)*11.);
+    float I=exp(-d*d/(sg*sg))*sg*smoothstep(0.,.12,tau)*exp(-tau*2.6)*(.3+1.4*n*n)*3.2;
+    acc+=mix(vec3(.55,.75,1.),vec3(.85,.62,1.),tau)*I;
+  }
+  return acc;
+}
+
+void main(){
+  vec2 uv=(gl_FragCoord.xy-.5*uRes)/uRes.y;
+  vec3 rd=normalize(uF+(uv.x*uR+uv.y*uU)*uTan*2.),ro=uRo;
+  gPa=uTan*2./uRes.y;
+  // пересечение со звездой (R=1)
+  float bq=dot(ro,rd),cq=dot(ro,ro)-1.,disc=bq*bq-cq,tS=1e9;
+  vec3 col=vec3(0.);
+  float bimp=length(ro-rd*bq);                          // прицельное расстояние луча до центра
+  if(disc>0.&&-bq-sqrt(disc)>0.){tS=-bq-sqrt(disc);col=surface(normalize(ro+rd*tS),rd);}
+  else{
+    // отклонение света звёзд полем нейтронной звезды (слабое поле: α ≈ 2rs/b)
+    vec3 nb=normalize(ro-rd*bq);float a=min(2.*RSG/(bimp*bimp),.5);   // затухает быстрее 1/b: заметно только у самого края
+    vec3 dir=normalize(rd*cos(a)-nb*sin(a));
+    col=sky(dir,gPa*(1.+2.*RSG/bimp));
+    float x=max(bimp-1.,0.);                            // корона и свечение
+    col+=vec3(.35,.72,1.)*(exp(-x/.05)*1.2+exp(-x/.3)*.18+exp(-x/1.5)*.025);
+  }
+  gTS=tS;
+  col+=fieldLines(toM(ro),toM(rd));
+  col+=jets(ro,rd,tS);
+  col+=plasmoids(ro,rd,tS);
+  gl_FragColor=vec4(col*uEnc,1.);
+}
+`;
+
+// ============================ BLOOM / БЛИК ============================
+const DOWN = `precision highp float;
+uniform sampler2D uT;uniform vec2 uSrc,uDst;uniform float uThr,uFirst;
+vec3 S(vec2 u){vec3 c=texture2D(uT,u).rgb;
+  if(uFirst>.5){float b=max(c.r,max(c.g,c.b));c*=max(b-uThr,0.)/max(b,1e-4);c=min(c,vec3(uThr*60.));}return c;}
+void main(){vec2 uv=gl_FragCoord.xy/uDst,hp=.5/uSrc;
+  vec3 s=S(uv)*4.+S(uv-hp)+S(uv+hp)+S(uv+vec2(hp.x,-hp.y))+S(uv-vec2(hp.x,-hp.y));
+  gl_FragColor=vec4(s/8.,1.);}`;
+const UP = `precision highp float;
+uniform sampler2D uT,uC;uniform vec2 uSrc,uDst;uniform float uDecay;
+vec3 S(vec2 u){return texture2D(uT,u).rgb;}
+void main(){vec2 uv=gl_FragCoord.xy/uDst,hp=.5/uSrc;
+  vec3 s=S(uv+vec2(-hp.x*2.,0.))+S(uv+vec2(-hp.x,hp.y))*2.+S(uv+vec2(0.,hp.y*2.))+S(uv+hp)*2.
+        +S(uv+vec2(hp.x*2.,0.))+S(uv+vec2(hp.x,-hp.y))*2.+S(uv+vec2(0.,-hp.y*2.))+S(uv-hp)*2.;
+  gl_FragColor=vec4(s/12.*uDecay+texture2D(uC,uv).rgb,1.);}`;
+// ============================ КОМПОЗИТ ============================
+const COMP = `precision highp float;
+uniform sampler2D uS,uB;uniform vec2 uRes;uniform float uDec,uTime;
+vec3 aces(vec3 x){return clamp((x*(2.51*x+.03))/(x*(2.43*x+.59)+.14),0.,1.);}
+float h12(vec2 p){vec3 q=fract(vec3(p.xyx)*.1031);q+=dot(q,q.yzx+33.33);return fract((q.x+q.y)*q.z);}
+vec3 samp(vec2 st){return texture2D(uS,st).rgb+texture2D(uB,st).rgb*.11;}
+void main(){
+  vec2 st=gl_FragCoord.xy/uRes,uv=(gl_FragCoord.xy-.5*uRes)/uRes.y,dc=st-.5;
+  // лёгкая хроматическая аберрация объектива, растёт к краям кадра
+  float ca=.0035*dot(uv,uv)+.0006;
+  vec3 c=vec3(samp(.5+dc*(1.+ca)).r,samp(st).g,samp(.5+dc*(1.-ca)).b)*uDec;
+  c=aces(c*.85);
+  c*=1.-.3*smoothstep(.5,1.3,length(uv*vec2(.85,1.)));   // виньетка
+  float g=h12(gl_FragCoord.xy+fract(uTime*7.13)*97.)-.5;
+  c+=g*.02*(1.-c)*sqrt(c+.02);                          // плёночное зерно
+  c=pow(c,vec3(1./2.2));
+  c+=(h12(gl_FragCoord.yx+uTime)-.5)/255.;
+  gl_FragColor=vec4(c,1.);}`;
+
+let P;
+try { P = { scene: prog(SCENE), down: prog(DOWN), up: prog(UP), comp: prog(COMP) }; }
+catch (e) { console.error(e); return; }
+
+// полноэкранный треугольник
+const vb = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, vb);
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+const draw = (t) => { gl.bindFramebuffer(gl.FRAMEBUFFER, t ? t.fb : null); gl.viewport(0, 0, t ? t.w : cv.width, t ? t.h : cv.height); gl.drawArrays(gl.TRIANGLES, 0, 3); };
+
+// текстура шума 256x256: R — случайные значения, G — R со сдвигом (37,17)
+const nd = new Uint8Array(256 * 256 * 4), rnd = new Uint8Array(256 * 256);
+let seed = 1337; for (let i = 0; i < rnd.length; i++) { seed = (seed * 1664525 + 1013904223) >>> 0; rnd[i] = seed >>> 24; }
+for (let y = 0; y < 256; y++) for (let x = 0; x < 256; x++) {
+  const o = (y * 256 + x) * 4; nd[o] = rnd[y * 256 + x]; nd[o + 1] = rnd[((y + 17) & 255) * 256 + ((x + 37) & 255)]; nd[o + 3] = 255;
+}
+const noise = mkTex(256, 256, { i: W2 ? gl.RGBA8 : gl.RGBA, t: gl.UNSIGNED_BYTE }, gl.LINEAR, gl.REPEAT, nd);
+
+// --- цели рендера ---
+let S = null, mips = [], ups = [];
+function free(t) { if (t) { gl.deleteTexture(t.tex); gl.deleteFramebuffer(t.fb); } }
+function alloc(sw, sh) {
+  [S, ...mips, ...ups].forEach(free);
+  S = mkTarget(sw, sh); mips = []; ups = [];
+  let w = sw, h = sh;
+  for (let i = 0; i < 7 && Math.min(w, h) > 8; i++) { w = Math.max(1, w >> 1); h = Math.max(1, h >> 1); mips.push(mkTarget(w, h)); }
+  for (let i = 0; i < mips.length - 1; i++) ups.push(mkTarget(mips[i].w, mips[i].h));
+}
+
+// --- адаптивное разрешение сцены ради 60 FPS ---
+const q = new URLSearchParams(location.search);
+const fixed = q.has('scale') ? +q.get('scale') : 0;
+let scale = fixed || 0.75, hist = [], hold = 0;
+function adapt(dt) {
+  if (fixed) return;
+  hist.push(dt); if (hist.length < 30) return;
+  hist.sort((a, b) => a - b); const med = hist[15]; hist = [];
+  if (med > 18.5) { scale = Math.max(0.35, scale * 0.88); hold = 4; }
+  else if (med < 17.4 && hold-- <= 0) scale = Math.min(1, scale * 1.05);
+}
+
+let cw = 0, ch = 0, sw = 0, sh = 0;
+function resize() {
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const w = Math.max(1, Math.round(innerWidth * dpr)), h = Math.max(1, Math.round(innerHeight * dpr));
+  if (w !== cw || h !== ch) { cw = cv.width = w; ch = cv.height = h; }
+  const nw = Math.max(64, Math.round(cw * scale)), nh = Math.max(36, Math.round(ch * scale));
+  if (!S || Math.abs(nw - sw) > sw * 0.04 || Math.abs(nh - sh) > sh * 0.04 || (nw === cw) !== (sw === cw)) { sw = nw; sh = nh; alloc(sw, sh); }
+}
+
+// --- магнитная ось наклонена к оси вращения на 38° и обходит её за 14 с (реальные магнетары: 2–12 с) ---
+const hsh = (x) => { x = Math.sin(x * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); };
+function render(t) {
+  const yaw = 0.6 + t * 0.018, pit = 0.22 + 0.08 * Math.sin(t * 0.041), D = 17;
+  const ro = [D * Math.cos(pit) * Math.sin(yaw), D * Math.sin(pit), D * Math.cos(pit) * Math.cos(yaw)];
+  const tgt = [0.9, -0.5, 0], f0 = ro.map((x, i) => tgt[i] - x), fl = Math.hypot(...f0), f = f0.map((x) => x / fl);
+  const n = Math.hypot(f[2], f[0]), r = [-f[2] / n, 0, f[0] / n];
+  const u = [r[1] * f[2] - r[2] * f[1], r[2] * f[0] - r[0] * f[2], r[0] * f[1] - r[1] * f[0]];
+  const al = 38 * Math.PI / 180, om = t * 2 * Math.PI / 14, spin = [0.12, 0.99, 0.05];
+  const sl = Math.hypot(...spin), s = spin.map((x) => x / sl);
+  // базис вокруг оси вращения
+  let a = [s[1] * 0 - s[2] * 1, s[2] * 0 - s[0] * 0, s[0] * 1 - s[1] * 0]; const al2 = Math.hypot(...a); a = a.map((x) => x / al2);
+  const b = [s[1] * a[2] - s[2] * a[1], s[2] * a[0] - s[0] * a[2], s[0] * a[1] - s[1] * a[0]];
+  const mz = [0, 1, 2].map((i) => Math.cos(al) * s[i] + Math.sin(al) * (Math.cos(om) * a[i] + Math.sin(om) * b[i]));
+  const ex = [0, 1, 2].map((i) => -Math.sin(om) * a[i] + Math.cos(om) * b[i]);          // перпендикулярно mz, вращается вместе
+  const my = [mz[1] * ex[2] - mz[2] * ex[1], mz[2] * ex[0] - mz[0] * ex[2], mz[0] * ex[1] - mz[1] * ex[0]];
+  const mx = [my[1] * mz[2] - my[2] * mz[1], my[2] * mz[0] - my[0] * mz[2], my[0] * mz[1] - my[1] * mz[0]];
+  // три слота вспышек: по очереди, каждые ~7 с на случайной дуге
+  const fls = [];
+  for (let k = 0; k < 3; k++) {
+    const x = t / 7 + k / 3, cyc = Math.floor(x), tau = x - cyc, hh = cyc * 3 + k;
+    fls.push(Math.floor(hsh(hh) * 6), hsh(hh + 0.3) < 0.5 ? 0 : 1, 1 + Math.floor(hsh(hh + 0.7) * 3), tau);
+  }
+  P.scene.use().t('uNoise', 0, noise).f('uRes', sw, sh).f('uTime', t % 1000).f('uTan', Math.tan(27 * Math.PI / 180) / 2).f('uEnc', ENC)
+    .f('uRo', ...ro).f('uF', ...f).f('uR', ...r).f('uU', ...u).f('uMx', ...mx).f('uMy', ...my).f('uMz', ...mz);
+  P.scene.v4('uFl', fls);
+  draw(S);
+  let src = S;
+  mips.forEach((m, i) => { P.down.use().t('uT', 0, src.tex).f('uSrc', src.w, src.h).f('uDst', m.w, m.h).f('uThr', 1.0 * ENC).f('uFirst', i ? 0 : 1); draw(m); src = m; });
+  let prev = mips[mips.length - 1];
+  for (let i = ups.length - 1; i >= 0; i--) {
+    P.up.use().t('uT', 0, prev.tex).t('uC', 1, mips[i].tex).f('uSrc', prev.w, prev.h).f('uDst', ups[i].w, ups[i].h).f('uDecay', 0.8);
+    draw(ups[i]); prev = ups[i];
+  }
+  P.comp.use().t('uS', 0, S.tex).t('uB', 1, (ups[0] || mips[0]).tex).f('uRes', cw, ch).f('uDec', 1 / ENC).f('uTime', t % 100);
+  draw(null);
+}
+
+const t0 = performance.now(); let last = t0;
+// ?still=<сек> — один кадр без анимации (для превью и проверки)
+if (q.has('still')) { resize(); render(+q.get('still') || 0); gl.finish(); return; }
+function frame(now) {
+  requestAnimationFrame(frame);
+  adapt(now - last); last = now;
+  resize();
+  render((now - t0) / 1000);
+}
+requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
